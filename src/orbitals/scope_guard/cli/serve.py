@@ -38,7 +38,7 @@ def serve(
         "0.0.0.0", "-h", "--host", help="The host to use for the server"
     ),
     vllm_port: int = typer.Option(8001, help="The port to use for the vLLM server"),
-    vllm_max_model_len: int = typer.Option(10000, help="Maximum model length for vLLM"),
+    vllm_max_model_len: int = typer.Option(15000, help="Maximum model length for vLLM"),
     vllm_max_num_seqs: int = typer.Option(
         2, help="Maximum number of sequences for vLLM"
     ),

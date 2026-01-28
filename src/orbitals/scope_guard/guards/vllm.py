@@ -26,8 +26,8 @@ class VLLMScopeGuard(ScopeGuard):
         model: DefaultModel | str = "scope-guard",
         skip_evidences: bool = False,
         temperature: float = 0.0,
-        max_tokens: int = 10_000,
-        max_model_len: int = 10_000,
+        max_tokens: int = 3000,
+        max_model_len: int = 15_000,
         max_num_seqs: int = 2,
         gpu_memory_utilization: float = 0.9,
     ):
@@ -131,7 +131,7 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         skip_evidences: bool = False,
         vllm_serving_url: str = "http://localhost:8000",
         temperature: float = 0.0,
-        max_tokens: int = 10_000,
+        max_tokens: int = 3000,
     ):
         import transformers
 
