@@ -1,0 +1,47 @@
+<svg viewBox="0 0 420 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Define constants -->
+  <defs>
+    <style>
+      .nucleus { fill: #1f2328; }
+      .electron { fill: #1f2328; }
+      .orbit { fill: none; stroke: #1f2328; stroke-width: 2; opacity: 0.4; }
+      .logo-text { 
+        fill: #1f2328; 
+        font-family: 'Roboto', sans-serif;
+        font-size: 64px;
+        font-weight: 550;
+      }
+    </style>
+  </defs>
+  
+  <!-- Center point -->
+  <g transform="translate(60, 50) scale(0.3)">
+    <!-- Orbital paths -->
+    <circle class="orbit" r="80" />
+    <circle class="orbit" r="140" />
+    
+    <!-- Nucleus (center LLM) -->
+    <circle class="nucleus" r="24" />
+    
+    <!-- Inner shell electrons (r=80) -->
+    <!-- 45° position -->
+    <circle class="electron" r="10" 
+            cx="56.57" cy="-56.57" />
+    
+    <!-- 225° position -->
+    <circle class="electron" r="10" 
+            cx="-56.57" cy="56.57" />
+    
+    <!-- Outer shell electrons (r=140) -->
+    <!-- 135° position -->
+    <circle class="electron" r="10" 
+            cx="-98.99" cy="-98.99" />
+    
+    <!-- 315° position -->
+    <circle class="electron" r="10" 
+            cx="98.99" cy="98.99" />
+  </g>
+
+  <text class="logo-text" x="130" y="72">Orbitals</text>
+  
+</svg>

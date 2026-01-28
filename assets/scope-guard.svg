@@ -1,0 +1,235 @@
+<svg viewBox="0 0 1170 470" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <!-- Radial gradient from top (blue) -->
+        <radialGradient id="blueGradient" cx="50%" cy="0%" r="100%" fx="50%" fy="0%">
+            <stop offset="0%" style="stop-color:rgba(56,189,248,0.12);stop-opacity:1" />
+            <stop offset="50%" style="stop-color:rgba(56,189,248,0);stop-opacity:0" />
+        </radialGradient>
+        
+        <!-- Radial gradient from center (pink) -->
+        <radialGradient id="pinkGradient" cx="50%" cy="50%" r="100%" fx="50%" fy="50%">
+            <stop offset="0%" style="stop-color:rgba(236,72,153,0.1);stop-opacity:1" />
+            <stop offset="50%" style="stop-color:rgba(236,72,153,0);stop-opacity:0" />
+        </radialGradient>
+        
+        <style>
+            /* Dark theme matching the page */
+            .input-node {
+                fill: rgba(56, 189, 248, 0.15);
+                stroke: #38bdf8;
+                stroke-width: 2.5;
+            }
+
+            .process-node {
+                fill: rgba(100, 100, 100, 0.15);
+                stroke: #9ca3af;
+                stroke-width: 2.5;
+            }
+
+            .arrow {
+                stroke: rgba(255, 255, 255, 0.9);
+                stroke-width: 2.5;
+                fill: none;
+                marker-end: url(#arrowhead);
+            }
+
+            .branch-line {
+                stroke: rgba(255, 255, 255, 1);
+                stroke-width: 2;
+                fill: none;
+            }
+
+            .header-text {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 16px;
+                fill: rgba(255, 255, 255, 0.9);
+                text-anchor: start;
+                font-weight: 600;
+            }
+
+            .content-text {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                fill: rgba(255, 255, 255, 0.75);
+                text-anchor: start;
+                font-style: italic;
+            }
+
+            .conversation-user-icon-history {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                fill: rgba(255, 255, 255, 0.55);
+                text-anchor: end;
+            }
+
+            .conversation-user-text-history {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                fill: rgba(255, 255, 255, 0.55);
+                text-anchor: end;
+                font-style: italic;
+            }
+
+            .conversation-user-icon {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                fill: rgba(255, 255, 255, 0.8);
+                text-anchor: end;
+            }
+
+            .conversation-user-text {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                fill: rgba(255, 255, 255, 0.8);
+                text-anchor: end;
+                font-style: italic;
+            }
+
+            .conversation-assistant-icon-history {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                fill: rgba(255, 255, 255, 0.55);
+                text-anchor: start;
+            }
+
+            .conversation-assistant-text-history {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                fill: rgba(255, 255, 255, 0.5);
+                text-anchor: start;
+                font-style: italic;
+            }
+
+            .node-text {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 17px;
+                text-anchor: middle;
+                dominant-baseline: middle;
+                fill: rgba(255, 255, 255, 0.9);
+                font-weight: 500;
+            }
+
+            .output-node {
+                fill: rgba(16, 185, 129, 0.15);
+                stroke: #10b981;
+                stroke-width: 2.5;
+            }
+
+            .list-item-text {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                fill: rgba(255, 255, 255, 0.75);
+                text-anchor: start;
+            }
+
+            .inactive-circle {
+                fill: rgba(100, 100, 100, 0.2);
+                stroke: rgba(120, 120, 120, 0.5);
+                stroke-width: 2;
+            }
+
+            .active-circle {
+                fill: rgba(239, 68, 68, 0.3);
+                stroke: #ef4444;
+                stroke-width: 2.5;
+            }
+
+            .inactive-label {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 15px;
+                fill: rgba(120, 120, 120, 0.6);
+                text-anchor: start;
+                dominant-baseline: middle;
+            }
+
+            .active-label {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                font-size: 15px;
+                fill: #ef4444;
+                text-anchor: start;
+                dominant-baseline: middle;
+                font-weight: 600;
+            }
+        </style>
+        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+            <polygon points="2 0, 10 3, 2 6" fill="rgba(255, 255, 255, 0.9)" />
+        </marker>
+    </defs>
+
+    <!-- Background base color (neutral-950) -->
+    <rect x="0" y="0" width="1170" height="470" fill="#0a0a0a" />
+    
+    <!-- Background gradients -->
+    <rect x="0" y="0" width="1170" height="470" fill="url(#blueGradient)" />
+    <rect x="0" y="0" width="1170" height="470" fill="url(#pinkGradient)" />
+
+    <g transform="translate(60, -40)">
+
+        <!-- User Query (input node - rectangle for I/O) -->
+        <rect x="-50" y="220" width="260" height="140" rx="0" class="input-node" />
+
+        <text x="190" y="250" class="conversation-user-icon-history">👤</text>
+        <text x="165" y="250" class="conversation-user-text-history">Package X hasn't arrived yet.</text>
+
+        <text x="-30" y="290" class="conversation-assistant-icon-history">🖥️</text>
+        <text x="-5" y="290" class="conversation-assistant-text-history">It'll arrive tomorrow.</text>
+
+        <text x="190" y="330" class="conversation-user-icon">👤</text>
+        <text x="165" y="330" class="conversation-user-text">It's late, I want a refund</text>
+
+
+        <!-- Service Description (input node - top, rectangle) -->
+        <rect x="310" y="60" width="260" height="120" rx="0" class="input-node" />
+        <text x="325" y="90" class="header-text">🖥️ Service Description</text>
+        <text x="325" y="120" class="content-text">You are a package delivery assistant.</text>
+        <text x="325" y="140" class="content-text">You don't answer refund questions.</text>
+
+        <!-- Scope Guard (process node - rectangle) -->
+        <rect x="340" y="240" width="200" height="100" rx="5" class="process-node" />
+        <text x="440" y="290" class="node-text">Scope Guard</text>
+
+        <!-- Arrows to Scope Guard -->
+        <path d="M 210 290 L 340 290" class="arrow" />
+        <path d="M 440 180 L 440 240" class="arrow" />
+
+        <!-- Branching Arrow -->
+        <path d="M 540 290 L 670 290" class="branch-line" />
+        <path d="M 670 150 L 670 430" class="branch-line" />
+        <path d="M 670 150 L 800 150" class="branch-line" />
+        <path d="M 670 430 L 800 430" class="branch-line" />
+
+        <rect x="800" y="50" width="300" height="200" rx="0" class="output-node" />
+        <text x="815" y="80" class="header-text">🎯 Scope</text>
+
+        <g transform="translate(5,45)">
+
+            <!-- Circle 1: Directly Supported (inactive) -->
+            <circle cx="830" cy="60" r="10" class="inactive-circle" />
+            <text x="850" y="60" class="inactive-label">Directly Supported</text>
+
+            <!-- Circle 2: Potentially Supported (inactive) -->
+            <circle cx="830" cy="90" r="10" class="inactive-circle" />
+            <text x="850" y="90" class="inactive-label">Potentially Supported</text>
+
+            <!-- Circle 3: Out of Scope (inactive) -->
+            <circle cx="830" cy="120" r="10" class="inactive-circle" />
+            <text x="850" y="120" class="inactive-label">Out of Scope</text>
+
+            <!-- Circle 4: Restricted (ACTIVE - predicted class) -->
+            <circle cx="830" cy="150" r="10" class="active-circle" />
+            <text x="850" y="150" class="active-label">Restricted</text>
+
+            <!-- Circle 5: Chit Chat (inactive) -->
+            <circle cx="830" cy="180" r="10" class="inactive-circle" />
+            <text x="850" y="180" class="inactive-label">Chit Chat</text>
+
+        </g>
+
+        <!-- Supporting Evidence (output node - aligned with bottom branch) -->
+        <rect x="800" y="390" width="300" height="80" rx="0" class="output-node" />
+        <text x="815" y="420" class="header-text">📋 Supporting Evidences</text>
+        <text x="830" y="445" class="list-item-text">• You don't answer refund questions</text>
+
+    </g>
+
+</svg>
