@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="assets/orbitals-banner.png" width="70%" />
+    <img src="https://raw.githubusercontent.com/Principled-Intelligence/orbitals/refs/heads/main/assets/orbitals-banner.png" width="70%" />
     <h3 align="center">
         <p>
             <b>LLM Guardrails tailored to your Principles</b>
@@ -8,10 +8,16 @@
 </div>
 
 <p align="center">
-    <img src="https://img.shields.io/pypi/v/orbitals?color=green" alt="PyPI Version">
+    <a href="https://pypi.org/project/orbitals/">
+        <img src="https://img.shields.io/pypi/v/orbitals?color=green" alt="PyPI Version">
+    </a>
     <!-- <img src="https://img.shields.io/badge/type%20checked-ty-blue.svg?color=green" alt="Type Checked with ty"> -->
-    <img src="https://img.shields.io/pypi/pyversions/orbitals" alt="Python Versions">
-    <img src="https://img.shields.io/github/license/principled-intelligence/orbitals" alt="GitHub License">
+    <a href="https://pypi.org/project/orbitals/">
+        <img src="https://img.shields.io/pypi/pyversions/orbitals" alt="Python Versions">
+    </a>
+    <a href="https://raw.githubusercontent.com/Principled-Intelligence/orbitals/refs/heads/main/LICENSE">
+        <img src="https://img.shields.io/github/license/principled-intelligence/orbitals" alt="GitHub License">
+    </a>
 </p>
 
 ## Overview

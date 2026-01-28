@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "orbitals"
-version = "0.1.1"
+version = "0.1.2"
 description = "LLM Guardrails tailored to your Principles"
 readme = "README.md"
 
-requires-python = "==3.13"
+requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 
 authors = [
@@ -37,7 +37,7 @@ scope-guard-hf = [
 ]
 scope-guard-vllm = [
     "transformers>=4.47.0,<5.0.0",
-    "vllm>=0.11.0,<0.13.0",
+    "vllm>=0.11.0",
     "xgrammar",
     "nvidia-ml-py",
 ]

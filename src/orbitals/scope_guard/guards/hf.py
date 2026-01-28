@@ -23,7 +23,7 @@ class HuggingFaceScopeGuard(ScopeGuard):
         backend: Literal["hf"] = "hf",
         model: DefaultModel | str = "scope-guard",
         skip_evidences: bool = False,
-        max_new_tokens: int = 10_000,
+        max_new_tokens: int = 3000,
         do_sample: bool = False,
         **kwargs,
     ):
