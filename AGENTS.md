@@ -20,15 +20,12 @@ This is done by prompting **local LLMs**.
     
 ## Project Structure
 
-The API implementation is entirely in Python, using `uv` as the package manager. We are adopting a mono-repo approach, with the `packages/` folder structured as follows:
-
-/src/transformers: 
-/models: 
+The API implementation is entirely in Python, using `uv` as the package manager. Project structure is as follows:
 
 * `src/orbitals/`: This contains the core source code for the library.
-    * `src/orbitals/cli`: code for root `orbitals` cli. It's a Typer app that imports and adds the apps defined by each orbital.
-    * `src/orbitals/scope_guard`:
-        * `src/orbitals/scope_guard/guards/`: Code for individual scope guards. Starting from the `BaseScopeGuard` root class, we find two subclasses, `ScopeGuard` (sync guard and batch-guard methods) and `AsyncScopeGuard` (async counterpart).
+    * `src/orbitals/cli`: Code for root `orbitals` cli. It's a Typer app that imports and adds the apps defined by each orbital.
+    * `src/orbitals/scope_guard`: This contains the code for the `ScopeGuard` orbital.
+        * `src/orbitals/scope_guard/guards/`: Code for individual scope guards. Starting from the `BaseScopeGuard` root class, we find two subclasses, `ScopeGuard` (sync validate and batch-validate methods) and `AsyncScopeGuard` (async counterpart).
         * `src/orbitals/scope_guard/cli/`: This contains the CLI commands of `scope-guard`.
         * `src/orbitals/scope_guard/serving/`: This contains the FastAPI serving implementation.
 
