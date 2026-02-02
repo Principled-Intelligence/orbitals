@@ -5,9 +5,9 @@
             <a href="https://principled-intelligence.com/news/introducing-scope-guard">
                 <img src="https://img.shields.io/badge/Blog-Article-blue" />
             </a>
-            <a href="https://demo.halo.principled.app">
+            <!-- <a href="https://demo.halo.principled.app">
                 <img src="https://img.shields.io/badge/Live-Demo-green" />
-            </a>
+            </a> -->
             <a href="https://colab.research.google.com/drive/1iBJog8H4QpS3_Y2powR5tidUhWJNajw2">
                 <img src="https://colab.research.google.com/assets/colab-badge.svg" />
             </a>
