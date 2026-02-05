@@ -17,7 +17,7 @@ def maybe_configure_gpu_usage():
         return
 
     try:
-        import pynvml  # ty: ignore[unresolved-import]  # provided by nvidia-ml-py
+        import pynvml  # ty: ignore[unresolved-import]
     except ModuleNotFoundError:
         logging.debug("nvidia-ml-py not available, skipping GPU auto-configuration")
         return

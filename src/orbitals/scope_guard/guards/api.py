@@ -106,7 +106,7 @@ class APIScopeGuard(ScopeGuard):
         skip_evidences: bool | None = None,
     ) -> ScopeGuardOutput:
         response = requests.post(
-            f"{self.api_url}/api/orbitals/scope-guard/validate",
+            f"{self.api_url}/orbitals/scope-guard/validate",
             json=_build_request_data(
                 conversation,
                 skip_evidences if skip_evidences is not None else self.skip_evidences,
@@ -134,7 +134,7 @@ class APIScopeGuard(ScopeGuard):
         skip_evidences: bool | None = None,
     ) -> list[ScopeGuardOutput]:
         response = requests.post(
-            f"{self.api_url}/api/orbitals/scope-guard/batch-validate",
+            f"{self.api_url}/orbitals/scope-guard/batch-validate",
             json=_build_batch_request_data(
                 conversations,
                 skip_evidences if skip_evidences is not None else self.skip_evidences,
@@ -185,7 +185,7 @@ class AsyncAPIScopeGuard(AsyncScopeGuard):
     ) -> ScopeGuardOutput:
         async with aiohttp.ClientSession() as session:
             response = await session.post(
-                f"{self.api_url}/api/in/scope-guard/validate",
+                f"{self.api_url}/in/scope-guard/validate",
                 json=_build_request_data(
                     conversation,
                     skip_evidences
@@ -216,7 +216,7 @@ class AsyncAPIScopeGuard(AsyncScopeGuard):
     ) -> list[ScopeGuardOutput]:
         async with aiohttp.ClientSession() as session:
             response = await session.post(
-                f"{self.api_url}/api/in/scope-guard/batch-validate",
+                f"{self.api_url}/in/scope-guard/batch-validate",
                 json=_build_batch_request_data(
                     conversations,
                     skip_evidences

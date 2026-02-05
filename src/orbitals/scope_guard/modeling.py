@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, BeforeValidator, TypeAdapter
 
 from ..types import ConversationMessage, LLMUsage
 
@@ -66,6 +66,23 @@ class ConversationUserMessage(BaseModel):
     content: str
 
 
-ScopeGuardInput = str | ConversationUserMessage | list[ConversationMessage]
+def _select_model_based_on_fields(
+    v: Any,
+) -> str | ConversationUserMessage | list[ConversationMessage]:
+    if isinstance(v, str):
+        return TypeAdapter(str).validate_python(v)
+    elif isinstance(v, dict):
+        return TypeAdapter(ConversationUserMessage).validate_python(v)
+    elif isinstance(v, list):
+        return TypeAdapter(list[ConversationMessage]).validate_python(v)
+
+    # no matching model found, let's fall back to standard pydantic behavior
+    return v
+
+
+ScopeGuardInput = Annotated[
+    str | ConversationUserMessage | list[ConversationMessage],
+    BeforeValidator(_select_model_based_on_fields),
+]
 
 ScopeGuardInputTypeAdapter = TypeAdapter(ScopeGuardInput)
