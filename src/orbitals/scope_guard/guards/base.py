@@ -175,23 +175,24 @@ class ScopeGuard(BaseScopeGuard):
         self,
         conversation: str | dict | list[dict],
         ai_service_description: str | AIServiceDescription,
+        *,
         skip_evidences: bool | None = None,
-        model: str | None = None,
+        **kwargs,
     ) -> ScopeGuardOutput:
         conversation = self._validate_conversation(conversation)
         return self._validate(
             conversation,
             ai_service_description=ai_service_description,
-            skip_evidences=skip_evidences,
-            model=model,
+            **kwargs,
         )
 
     def _validate(
         self,
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
+        *,
         skip_evidences: bool | None = None,
-        model: str | None = None,
+        **kwargs,
     ) -> ScopeGuardOutput:
         raise NotImplementedError
 
@@ -200,8 +201,9 @@ class ScopeGuard(BaseScopeGuard):
         conversations: list[str] | list[dict] | list[list[dict]],
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
+        *,
         skip_evidences: bool | None = None,
-        model: str | None = None,
+        **kwargs,
     ) -> list[ScopeGuardOutput]:
         if len(conversations) == 0:
             return []
@@ -215,8 +217,7 @@ class ScopeGuard(BaseScopeGuard):
             validated_conversations,
             ai_service_description=ai_service_description,
             ai_service_descriptions=ai_service_descriptions,
-            skip_evidences=skip_evidences,
-            model=model,
+            **kwargs,
         )
 
     def _batch_validate(
@@ -224,8 +225,9 @@ class ScopeGuard(BaseScopeGuard):
         conversations: list[ScopeGuardInput],
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
+        *,
         skip_evidences: bool | None = None,
-        model: str | None = None,
+        **kwargs,
     ) -> list[ScopeGuardOutput]:
         raise NotImplementedError
 
@@ -261,23 +263,24 @@ class AsyncScopeGuard(BaseScopeGuard):
         self,
         conversation: str | dict | list[dict],
         ai_service_description: str | AIServiceDescription,
+        *,
         skip_evidences: bool | None = None,
-        model: str | None = None,
+        **kwargs,
     ) -> ScopeGuardOutput:
         conversation = self._validate_conversation(conversation)
         return await self._validate(
             conversation,
             ai_service_description=ai_service_description,
-            skip_evidences=skip_evidences,
-            model=model,
+            **kwargs,
         )
 
     async def _validate(
         self,
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
+        *,
         skip_evidences: bool | None = None,
-        model: str | None = None,
+        **kwargs,
     ) -> ScopeGuardOutput:
         raise NotImplementedError
 
@@ -286,8 +289,9 @@ class AsyncScopeGuard(BaseScopeGuard):
         conversations: list[str] | list[dict] | list[list[dict]],
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
+        *,
         skip_evidences: bool | None = None,
-        model: str | None = None,
+        **kwargs,
     ) -> list[ScopeGuardOutput]:
         if len(conversations) == 0:
             return []
@@ -301,8 +305,7 @@ class AsyncScopeGuard(BaseScopeGuard):
             validated_conversations,
             ai_service_description=ai_service_description,
             ai_service_descriptions=ai_service_descriptions,
-            skip_evidences=skip_evidences,
-            model=model,
+            **kwargs,
         )
 
     async def _batch_validate(
@@ -310,7 +313,8 @@ class AsyncScopeGuard(BaseScopeGuard):
         conversations: list[ScopeGuardInput],
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
+        *,
         skip_evidences: bool | None = None,
-        model: str | None = None,
+        **kwargs,
     ) -> list[ScopeGuardOutput]:
         raise NotImplementedError

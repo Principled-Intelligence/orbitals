@@ -109,8 +109,10 @@ class APIScopeGuard(ScopeGuard):
         self,
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
+        *,
         skip_evidences: bool | None = None,
         model: str | None = None,
+        **kwargs,
     ) -> ScopeGuardOutput:
         response = requests.post(
             f"{self.api_url}/orbitals/scope-guard/validate",
@@ -139,8 +141,10 @@ class APIScopeGuard(ScopeGuard):
         conversations: list[ScopeGuardInput],
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
+        *,
         skip_evidences: bool | None = None,
         model: str | None = None,
+        **kwargs,
     ) -> list[ScopeGuardOutput]:
         response = requests.post(
             f"{self.api_url}/orbitals/scope-guard/batch-validate",
@@ -193,8 +197,10 @@ class AsyncAPIScopeGuard(AsyncScopeGuard):
         self,
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
+        *,
         skip_evidences: bool | None = None,
         model: str | None = None,
+        **kwargs,
     ) -> ScopeGuardOutput:
         async with aiohttp.ClientSession() as session:
             response = await session.post(
@@ -224,8 +230,10 @@ class AsyncAPIScopeGuard(AsyncScopeGuard):
         conversations: list[ScopeGuardInput],
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
+        *,
         skip_evidences: bool | None = None,
         model: str | None = None,
+        **kwargs,
     ) -> list[ScopeGuardOutput]:
         async with aiohttp.ClientSession() as session:
             response = await session.post(

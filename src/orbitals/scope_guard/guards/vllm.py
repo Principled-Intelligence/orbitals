@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     import transformers  # noqa: F401
     import vllm  # noqa: F401
 
+from functools import lru_cache
+
 from ...types import AIServiceDescription, LLMUsage
 from ..modeling import (
     ScopeGuardInput,
@@ -16,6 +18,13 @@ from ..modeling import (
 )
 from ..prompting import ScopeGuardResponseModel, build_prompt
 from .base import AsyncScopeGuard, DefaultModel, ScopeGuard
+
+
+@lru_cache(maxsize=8)
+def _get_tokenizer(model_name: str) -> transformers.PreTrainedTokenizer:
+    import transformers
+
+    return transformers.AutoTokenizer.from_pretrained(model_name)
 
 
 @ScopeGuard.register_guard("vllm")
@@ -35,7 +44,6 @@ class VLLMScopeGuard(ScopeGuard):
 
         maybe_configure_gpu_usage()
 
-        import transformers
         import vllm
 
         super().__init__(backend)
@@ -47,7 +55,7 @@ class VLLMScopeGuard(ScopeGuard):
             max_num_seqs=max_num_seqs,
             gpu_memory_utilization=gpu_memory_utilization,
         )
-        self.tokenizer = transformers.AutoTokenizer.from_pretrained(self.model)
+        self.tokenizer = _get_tokenizer(self.model)
         self.sampling_params = vllm.SamplingParams(
             temperature=temperature,
             max_tokens=max_tokens,
@@ -57,16 +65,14 @@ class VLLMScopeGuard(ScopeGuard):
         self,
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
+        *,
         skip_evidences: bool | None = None,
-        model: str | None = None,
+        **kwargs,
     ) -> ScopeGuardOutput:
-        if model is not None:
-            raise NotImplementedError(
-                "Model selection is not implemented for the vllm backend"
-            )
-
         return self._batch_validate(
-            [conversation], ai_service_description, skip_evidences=skip_evidences, model=model
+            [conversation],
+            ai_service_description,
+            skip_evidences=skip_evidences,
         )[0]
 
     def _batch_validate(
@@ -74,14 +80,10 @@ class VLLMScopeGuard(ScopeGuard):
         conversations: list[ScopeGuardInput],
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
+        *,
         skip_evidences: bool | None = None,
-        model: str | None = None,
+        **kwargs,
     ) -> list[ScopeGuardOutput]:
-        if model is not None:
-            raise NotImplementedError(
-                "Model selection is not implemented for the vllm backend"
-            )
-
         if ai_service_descriptions is not None:
             prompts = [
                 build_prompt(
@@ -146,17 +148,12 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         max_tokens: int = 3000,
         chat_templating_tokenizer: str | None = None,
     ):
-        import transformers
-
         super().__init__(backend)
         self.default_model_name = self.maybe_map_model(model)
         self.default_tokenizer_name = (
             self.maybe_map_model(chat_templating_tokenizer)
             if chat_templating_tokenizer is not None
             else self.default_model_name
-        )
-        self.default_tokenizer = transformers.AutoTokenizer.from_pretrained(
-            self.default_tokenizer_name
         )
         self.skip_evidences = skip_evidences
         self.vllm_serving_url = vllm_serving_url
@@ -170,14 +167,25 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None,
         prefill: bool,
+        chat_templating_tokenizer: str | None = None,
     ) -> ScopeGuardOutput:
         model_name = model_name if model_name is not None else self.default_model_name
         skip_evidences = (
             skip_evidences if skip_evidences is not None else self.skip_evidences
         )
+        # Tokenizer resolution priority:
+        # 1. Explicit chat_templating_tokenizer override
+        # 2. Tokenizer for the runtime model
+        # 3. Falls back to default tokenizer when no model override (same as 2)
+        tokenizer_name = (
+            self.maybe_map_model(chat_templating_tokenizer)
+            if chat_templating_tokenizer is not None
+            else model_name
+        )
+        tokenizer = _get_tokenizer(tokenizer_name)
 
         prompt = build_prompt(
-            tokenizer=self.default_tokenizer,
+            tokenizer=tokenizer,
             conversation=conversation,
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
@@ -231,14 +239,18 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         self,
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
+        *,
         skip_evidences: bool | None = None,
         model: str | None = None,
+        chat_templating_tokenizer: str | None = None,
+        **kwargs,
     ) -> ScopeGuardOutput:
         results = await self._batch_validate(
             conversations=[conversation],
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
             model=model,
+            chat_templating_tokenizer=chat_templating_tokenizer,
         )
         return results[0]
 
@@ -247,8 +259,11 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         conversations: list[ScopeGuardInput],
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
+        *,
         skip_evidences: bool | None = None,
         model: str | None = None,
+        chat_templating_tokenizer: str | None = None,
+        **kwargs,
     ) -> list[ScopeGuardOutput]:
         if ai_service_description is not None:
             ai_service_descriptions = [ai_service_description] * len(conversations)  # type: ignore[invalid-assignment]
@@ -271,6 +286,7 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
                 # TODO supporting True on this parameter is a bit tricky
                 # problem is the grammar-based decoding, which is unaware of the prefilling
                 prefill=False,
+                chat_templating_tokenizer=chat_templating_tokenizer,
             )
             for c, aisd in zip(conversations, ai_service_descriptions)  # type: ignore[invalid-argument-type]
         ]
