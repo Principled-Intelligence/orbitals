@@ -16,7 +16,7 @@ from ..modeling import (
     ScopeGuardInput,
     ScopeGuardOutput,
 )
-from ..prompting import ScopeGuardResponseModel, build_prompt
+from ..prompting import SYSTEM_PROMPT, ScopeGuardResponseModel, build_prompt
 from .base import AsyncScopeGuard, DefaultModel, ScopeGuard
 
 
@@ -64,23 +64,23 @@ class VLLMScopeGuard(ScopeGuard):
     def _validate(
         self,
         conversation: ScopeGuardInput,
-        ai_service_description: str | AIServiceDescription,
         *,
+        ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> ScopeGuardOutput:
         return self._batch_validate(
             [conversation],
-            ai_service_description,
+            ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
         )[0]
 
     def _batch_validate(
         self,
         conversations: list[ScopeGuardInput],
+        *,
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-        *,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardOutput]:
@@ -147,6 +147,7 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         temperature: float = 0.0,
         max_tokens: int = 3000,
         chat_templating_tokenizer: str | None = None,
+        include_system_prompt_in_usage: bool = False,
     ):
         super().__init__(backend)
         self.default_model_name = self.maybe_map_model(model)
@@ -159,6 +160,7 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         self.vllm_serving_url = vllm_serving_url
         self.vllm_temperature = temperature
         self.vllm_max_tokens = max_tokens
+        self.include_system_prompt_in_usage = include_system_prompt_in_usage
 
     async def _handle_request(
         self,
@@ -169,20 +171,21 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         prefill: bool,
         chat_templating_tokenizer: str | None = None,
     ) -> ScopeGuardOutput:
+        model_name = (
+            self.maybe_map_model(model_name) if model_name is not None else None
+        )
+
+        if chat_templating_tokenizer is not None:
+            tokenizer = _get_tokenizer(self.maybe_map_model(chat_templating_tokenizer))
+        elif model_name is not None:
+            tokenizer = _get_tokenizer(model_name)
+        else:
+            tokenizer = _get_tokenizer(self.default_tokenizer_name)
+
         model_name = model_name if model_name is not None else self.default_model_name
         skip_evidences = (
             skip_evidences if skip_evidences is not None else self.skip_evidences
         )
-        # Tokenizer resolution priority:
-        # 1. Explicit chat_templating_tokenizer override
-        # 2. Tokenizer for the runtime model
-        # 3. Falls back to default tokenizer when no model override (same as 2)
-        tokenizer_name = (
-            self.maybe_map_model(chat_templating_tokenizer)
-            if chat_templating_tokenizer is not None
-            else model_name
-        )
-        tokenizer = _get_tokenizer(tokenizer_name)
 
         prompt = build_prompt(
             tokenizer=tokenizer,
@@ -223,23 +226,31 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         except pydantic.ValidationError as e:
             raise ValueError(f"Failed to validate generated text: {e}")
 
+        system_prompt_tokens = (
+            0
+            if self.include_system_prompt_in_usage
+            else len(tokenizer.encode(SYSTEM_PROMPT))
+        )
+
         return ScopeGuardOutput(
             scope_class=validated_obj.scope_class,
             evidences=validated_obj.evidences,
             model=model_name,
             # TODO usage implementation is mocked
             usage=LLMUsage(
-                prompt_tokens=response_json["usage"]["prompt_tokens"],
+                prompt_tokens=response_json["usage"]["prompt_tokens"]
+                - system_prompt_tokens,
                 completion_tokens=response_json["usage"]["completion_tokens"],
-                total_tokens=response_json["usage"]["total_tokens"],
+                total_tokens=response_json["usage"]["total_tokens"]
+                - system_prompt_tokens,
             ),
         )
 
     async def _validate(
         self,
         conversation: ScopeGuardInput,
-        ai_service_description: str | AIServiceDescription,
         *,
+        ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
         model: str | None = None,
         chat_templating_tokenizer: str | None = None,
@@ -257,9 +268,9 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
     async def _batch_validate(
         self,
         conversations: list[ScopeGuardInput],
+        *,
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-        *,
         skip_evidences: bool | None = None,
         model: str | None = None,
         chat_templating_tokenizer: str | None = None,

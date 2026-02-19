@@ -58,8 +58,8 @@ class ScopeGuardResponse(BaseModel):
 async def validate(
     conversation: ScopeGuardInput,
     ai_service_description: Annotated[str | AIServiceDescription, Body()],
-    skip_evidences: bool | None = Body(None),
-    model: str | None = Body(None),
+    skip_evidences: Annotated[bool | None, Body()] = None,
+    model: Annotated[str | None, Body()] = None,
 ) -> ScopeGuardResponse:
     global scope_guard
 
@@ -86,8 +86,8 @@ async def batch_validate(
     conversations: list[ScopeGuardInput],
     ai_service_description: str | AIServiceDescription | None = Body(None),
     ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-    skip_evidences: bool | None = Body(None),
-    model: str | None = Body(None),
+    skip_evidences: Annotated[bool | None, Body()] = None,
+    model: Annotated[str | None, Body()] = None,
 ) -> list[ScopeGuardResponse]:
     global scope_guard
 

@@ -22,10 +22,14 @@ def main():
 
     # mock guard to be sure the classifier is warmed up
     # using different user query and ai service description to avoid backend caching
-    scope_guard.validate("What is your name?", "You are an helpful AI assistant.")
+    scope_guard.validate(
+        "What is your name?", ai_service_description="You are an helpful AI assistant."
+    )
 
     start_time = time.time()
-    result = scope_guard.validate(user_question, ai_service_description)
+    result = scope_guard.validate(
+        user_question, ai_service_description=ai_service_description
+    )
     end_time = time.time()
 
     print(f"# scope: {result.scope_class}")

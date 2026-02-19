@@ -109,8 +109,8 @@ class BaseScopeGuard:
     def _validate_ai_service_description_input(
         self,
         conversations: list[ScopeGuardInput],
-        ai_service_description: str | AIServiceDescription,
-        ai_service_descriptions: list[str] | list[AIServiceDescription],
+        ai_service_description: str | AIServiceDescription | None,
+        ai_service_descriptions: list[str] | list[AIServiceDescription] | None,
     ):
         if bool(ai_service_description is not None) == bool(
             ai_service_descriptions is not None
@@ -174,8 +174,8 @@ class ScopeGuard(BaseScopeGuard):
     def validate(
         self,
         conversation: str | dict | list[dict],
-        ai_service_description: str | AIServiceDescription,
         *,
+        ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> ScopeGuardOutput:
@@ -183,14 +183,15 @@ class ScopeGuard(BaseScopeGuard):
         return self._validate(
             conversation,
             ai_service_description=ai_service_description,
+            skip_evidences=skip_evidences,
             **kwargs,
         )
 
     def _validate(
         self,
         conversation: ScopeGuardInput,
-        ai_service_description: str | AIServiceDescription,
         *,
+        ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> ScopeGuardOutput:
@@ -199,9 +200,9 @@ class ScopeGuard(BaseScopeGuard):
     def batch_validate(
         self,
         conversations: list[str] | list[dict] | list[list[dict]],
+        *,
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-        *,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardOutput]:
@@ -217,15 +218,16 @@ class ScopeGuard(BaseScopeGuard):
             validated_conversations,
             ai_service_description=ai_service_description,
             ai_service_descriptions=ai_service_descriptions,
+            skip_evidences=skip_evidences,
             **kwargs,
         )
 
     def _batch_validate(
         self,
         conversations: list[ScopeGuardInput],
+        *,
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-        *,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardOutput]:
@@ -243,6 +245,7 @@ class AsyncScopeGuard(BaseScopeGuard):
         temperature: float = 0.0,
         max_tokens: int = 3000,
         chat_templating_tokenizer: str | None = None,
+        include_system_prompt_in_usage: bool = False,
     ) -> AsyncVLLMApiScopeGuard: ...
 
     @overload
@@ -262,8 +265,8 @@ class AsyncScopeGuard(BaseScopeGuard):
     async def validate(
         self,
         conversation: str | dict | list[dict],
-        ai_service_description: str | AIServiceDescription,
         *,
+        ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> ScopeGuardOutput:
@@ -271,14 +274,15 @@ class AsyncScopeGuard(BaseScopeGuard):
         return await self._validate(
             conversation,
             ai_service_description=ai_service_description,
+            skip_evidences=skip_evidences,
             **kwargs,
         )
 
     async def _validate(
         self,
         conversation: ScopeGuardInput,
-        ai_service_description: str | AIServiceDescription,
         *,
+        ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> ScopeGuardOutput:
@@ -287,9 +291,9 @@ class AsyncScopeGuard(BaseScopeGuard):
     async def batch_validate(
         self,
         conversations: list[str] | list[dict] | list[list[dict]],
+        *,
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-        *,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardOutput]:
@@ -305,15 +309,16 @@ class AsyncScopeGuard(BaseScopeGuard):
             validated_conversations,
             ai_service_description=ai_service_description,
             ai_service_descriptions=ai_service_descriptions,
+            skip_evidences=skip_evidences,
             **kwargs,
         )
 
     async def _batch_validate(
         self,
         conversations: list[ScopeGuardInput],
+        *,
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-        *,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardOutput]:

@@ -108,8 +108,8 @@ class APIScopeGuard(ScopeGuard):
     def _validate(
         self,
         conversation: ScopeGuardInput,
-        ai_service_description: str | AIServiceDescription,
         *,
+        ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
         model: str | None = None,
         **kwargs,
@@ -139,9 +139,9 @@ class APIScopeGuard(ScopeGuard):
     def _batch_validate(
         self,
         conversations: list[ScopeGuardInput],
+        *,
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-        *,
         skip_evidences: bool | None = None,
         model: str | None = None,
         **kwargs,
@@ -196,15 +196,15 @@ class AsyncAPIScopeGuard(AsyncScopeGuard):
     async def _validate(
         self,
         conversation: ScopeGuardInput,
-        ai_service_description: str | AIServiceDescription,
         *,
+        ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
         model: str | None = None,
         **kwargs,
     ) -> ScopeGuardOutput:
         async with aiohttp.ClientSession() as session:
             response = await session.post(
-                f"{self.api_url}/in/scope-guard/validate",
+                f"{self.api_url}/orbitals/scope-guard/validate",
                 json=_build_request_data(
                     model=model if model is not None else self.default_model,
                     conversation=conversation,
@@ -228,16 +228,16 @@ class AsyncAPIScopeGuard(AsyncScopeGuard):
     async def _batch_validate(
         self,
         conversations: list[ScopeGuardInput],
+        *,
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-        *,
         skip_evidences: bool | None = None,
         model: str | None = None,
         **kwargs,
     ) -> list[ScopeGuardOutput]:
         async with aiohttp.ClientSession() as session:
             response = await session.post(
-                f"{self.api_url}/in/scope-guard/batch-validate",
+                f"{self.api_url}/orbitals/scope-guard/batch-validate",
                 json=_build_batch_request_data(
                     model=model if model is not None else self.default_model,
                     conversations=conversations,

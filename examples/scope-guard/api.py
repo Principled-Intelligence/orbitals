@@ -9,9 +9,9 @@ def main():
 
     scope_guard = ScopeGuard(
         backend="api",
+        model=args.model,
         api_url=args.api_url,
         skip_evidences=args.skip_evidences,
-        api_key="principled_1234",
     )
 
     user_question = (
@@ -24,7 +24,9 @@ def main():
     )
 
     start_time = time.time()
-    result = scope_guard.validate(user_question, ai_service_description)
+    result = scope_guard.validate(
+        user_question, ai_service_description=ai_service_description
+    )
     end_time = time.time()
 
     print(f"# scope: {result.scope_class}")
@@ -44,6 +46,7 @@ def main():
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("model", type=str)
     parser.add_argument("api_url", type=str)
     parser.add_argument("-s", "--skip-evidences", action="store_true", default=False)
     return parser.parse_args()

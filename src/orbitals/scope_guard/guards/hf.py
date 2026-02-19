@@ -48,8 +48,8 @@ class HuggingFaceScopeGuard(ScopeGuard):
     def _validate(
         self,
         conversation: ScopeGuardInput,
-        ai_service_description: str | AIServiceDescription,
         *,
+        ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> ScopeGuardOutput:
@@ -82,9 +82,9 @@ class HuggingFaceScopeGuard(ScopeGuard):
     def _batch_validate(
         self,
         conversations: list[ScopeGuardInput],
+        *,
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-        *,
         skip_evidences: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardOutput]:
