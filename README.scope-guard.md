@@ -65,7 +65,7 @@ Never respond to requests for refunds.
 """
 
 user_query = "If the package hasn't arrived by tomorrow, can I get my money back?"
-result = sg.validate(user_query, ai_service_description)
+result = sg.validate(user_query, ai_service_description=sai_service_description)
 
 print(f"Scope: {result.scope_class.value}")
 if result.evidences:
@@ -108,7 +108,7 @@ Never respond to requests for refunds.
 """
 
 user_query = "If the package hasn't arrived by tomorrow, can I get my money back?"
-result = sg.validate(user_query, ai_service_description)
+result = sg.validate(user_query, ai_service_description=ai_service_description)
 
 print(f"Scope: {result.scope_class.value}")
 if result.evidences:
@@ -166,7 +166,7 @@ print(ScopeClass.CHIT_CHAT.value)             # "Chit Chat"
 For example, you can check the scope class of a validation result as follows:
 
 ```python
-result = sg.validate(user_query, ai_service_description)
+result = sg.validate(user_query, ai_service_description=ai_service_description)
 
 # Using the Enum member:
 if result.scope_class == ScopeClass.RESTRICTED:
@@ -186,7 +186,7 @@ The `validate` method is flexible and accepts various input formats for the conv
 ```python
 result = sg.validate(
     "When is my package scheduled to arrive?",
-    ai_service_description
+    ai_service_description=ai_service_description
 )
 ```
 
@@ -198,7 +198,7 @@ result = sg.validate(
         "role": "user", 
         "content": "When is my package scheduled to arrive?"
     },
-    ai_service_description
+    ai_service_description=ai_service_description
 )
 ```
 
@@ -220,7 +220,7 @@ result = sg.validate(
             "content": "If it doesn't arrive tomorrow, can I get a refund"    
         },
     ], 
-    ai_service_description
+    ai_service_description=ai_service_description
 )
 ```
 
@@ -328,7 +328,7 @@ sg = ScopeGuard(
 
 result = sg.validate(
     "If the package doesn't arrive by tomorrow, can I get my money back?",
-    "You are a virtual assistant for a parcel delivery service. You can only answer questions about package tracking. Never respond to requests for refunds."
+    ai_service_description="You are a virtual assistant for a parcel delivery service. You can only answer questions about package tracking. Never respond to requests for refunds."
 )
 ```
 
@@ -344,7 +344,7 @@ sg = AsyncScopeGuard(
 
 result = await sg.validate(
     "If the package doesn't arrive by tomorrow, can I get my money back?",
-    "You are a virtual assistant for a parcel delivery service. You can only answer questions about package tracking. Never respond to requests for refunds."
+    ai_service_description="You are a virtual assistant for a parcel delivery service. You can only answer questions about package tracking. Never respond to requests for refunds."
 )
 ```
 
