@@ -58,9 +58,15 @@ class VLLMScopeGuard(ScopeGuard):
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> ScopeGuardOutput:
+        if model is not None:
+            raise NotImplementedError(
+                "Model selection is not implemented for the vllm backend"
+            )
+
         return self._batch_validate(
-            [conversation], ai_service_description, skip_evidences=skip_evidences
+            [conversation], ai_service_description, skip_evidences=skip_evidences, model=model
         )[0]
 
     def _batch_validate(
@@ -69,7 +75,13 @@ class VLLMScopeGuard(ScopeGuard):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> list[ScopeGuardOutput]:
+        if model is not None:
+            raise NotImplementedError(
+                "Model selection is not implemented for the vllm backend"
+            )
+
         if ai_service_descriptions is not None:
             prompts = [
                 build_prompt(
@@ -132,42 +144,43 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         vllm_serving_url: str = "http://localhost:8000",
         temperature: float = 0.0,
         max_tokens: int = 3000,
+        chat_templating_tokenizer: str | None = None,
     ):
         import transformers
 
         super().__init__(backend)
-        self.model = self.maybe_map_model(model)
-        self.tokenizer = transformers.AutoTokenizer.from_pretrained(self.model)
+        self.default_model_name = self.maybe_map_model(model)
+        self.default_tokenizer_name = (
+            self.maybe_map_model(chat_templating_tokenizer)
+            if chat_templating_tokenizer is not None
+            else self.default_model_name
+        )
+        self.default_tokenizer = transformers.AutoTokenizer.from_pretrained(
+            self.default_tokenizer_name
+        )
         self.skip_evidences = skip_evidences
         self.vllm_serving_url = vllm_serving_url
         self.vllm_temperature = temperature
         self.vllm_max_tokens = max_tokens
 
-    async def _validate(
-        self,
-        conversation: ScopeGuardInput,
-        ai_service_description: str | AIServiceDescription,
-        skip_evidences: bool | None = None,
-    ) -> ScopeGuardOutput:
-        results = await self._batch_validate(
-            [conversation], ai_service_description, skip_evidences=skip_evidences
-        )
-        return results[0]
-
     async def _handle_request(
         self,
+        model_name: str | None,
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None,
         prefill: bool,
     ) -> ScopeGuardOutput:
+        model_name = model_name if model_name is not None else self.default_model_name
+        skip_evidences = (
+            skip_evidences if skip_evidences is not None else self.skip_evidences
+        )
+
         prompt = build_prompt(
-            self.tokenizer,
-            conversation,
-            ai_service_description,
-            skip_evidences=skip_evidences
-            if skip_evidences is not None
-            else self.skip_evidences,
+            tokenizer=self.default_tokenizer,
+            conversation=conversation,
+            ai_service_description=ai_service_description,
+            skip_evidences=skip_evidences,
             prefill=prefill,
         )
 
@@ -175,7 +188,7 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
             async with session.post(
                 f"{self.vllm_serving_url}/v1/completions",
                 json={
-                    "model": self.model,
+                    "model": model_name,
                     "prompt": prompt,
                     "temperature": self.vllm_temperature,
                     "max_tokens": self.vllm_max_tokens,
@@ -205,7 +218,7 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         return ScopeGuardOutput(
             scope_class=validated_obj.scope_class,
             evidences=validated_obj.evidences,
-            model=self.model,
+            model=model_name,
             # TODO usage implementation is mocked
             usage=LLMUsage(
                 prompt_tokens=response_json["usage"]["prompt_tokens"],
@@ -214,12 +227,28 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
             ),
         )
 
+    async def _validate(
+        self,
+        conversation: ScopeGuardInput,
+        ai_service_description: str | AIServiceDescription,
+        skip_evidences: bool | None = None,
+        model: str | None = None,
+    ) -> ScopeGuardOutput:
+        results = await self._batch_validate(
+            conversations=[conversation],
+            ai_service_description=ai_service_description,
+            skip_evidences=skip_evidences,
+            model=model,
+        )
+        return results[0]
+
     async def _batch_validate(
         self,
         conversations: list[ScopeGuardInput],
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> list[ScopeGuardOutput]:
         if ai_service_description is not None:
             ai_service_descriptions = [ai_service_description] * len(conversations)  # type: ignore[invalid-assignment]
@@ -235,12 +264,12 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
 
         tasks = [
             self._handle_request(
-                c,
-                aisd,
+                model_name=model,
+                conversation=c,
+                ai_service_description=aisd,
                 skip_evidences=skip_evidences,
                 # TODO supporting True on this parameter is a bit tricky
                 # problem is the grammar-based decoding, which is unaware of the prefilling
-                # one possible solution is replacing the json decoding with
                 prefill=False,
             )
             for c, aisd in zip(conversations, ai_service_descriptions)  # type: ignore[invalid-argument-type]

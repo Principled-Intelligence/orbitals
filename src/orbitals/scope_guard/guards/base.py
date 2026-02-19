@@ -154,16 +154,18 @@ class ScopeGuard(BaseScopeGuard):
         max_tokens: int = 3000,
         max_model_len: int = 30_000,
         max_num_seqs: int = 2,
+        gpu_memory_utilization: float = 0.9,
     ) -> VLLMScopeGuard: ...
 
     @overload
     def __new__(
         cls,
         backend: Literal["api"],
+        model: DefaultModel | str = "scope-guard",
         api_url: str = "http://localhost:8000",
-        custom_headers: dict[str, str] = {},
-        skip_evidences: bool = False,
         api_key: str | None = None,
+        skip_evidences: bool = False,
+        custom_headers: dict[str, str] = {},
     ) -> APIScopeGuard: ...
 
     def __new__(cls, backend: str = "hf", *args, **kwargs):
@@ -174,15 +176,22 @@ class ScopeGuard(BaseScopeGuard):
         conversation: str | dict | list[dict],
         ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> ScopeGuardOutput:
         conversation = self._validate_conversation(conversation)
-        return self._validate(conversation, ai_service_description, skip_evidences)
+        return self._validate(
+            conversation,
+            ai_service_description=ai_service_description,
+            skip_evidences=skip_evidences,
+            model=model,
+        )
 
     def _validate(
         self,
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> ScopeGuardOutput:
         raise NotImplementedError
 
@@ -192,6 +201,7 @@ class ScopeGuard(BaseScopeGuard):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> list[ScopeGuardOutput]:
         if len(conversations) == 0:
             return []
@@ -203,9 +213,10 @@ class ScopeGuard(BaseScopeGuard):
 
         return self._batch_validate(
             validated_conversations,
-            ai_service_description,
-            ai_service_descriptions,
-            skip_evidences,
+            ai_service_description=ai_service_description,
+            ai_service_descriptions=ai_service_descriptions,
+            skip_evidences=skip_evidences,
+            model=model,
         )
 
     def _batch_validate(
@@ -214,6 +225,7 @@ class ScopeGuard(BaseScopeGuard):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> list[ScopeGuardOutput]:
         raise NotImplementedError
 
@@ -228,16 +240,18 @@ class AsyncScopeGuard(BaseScopeGuard):
         vllm_serving_url: str = "http://localhost:8000",
         temperature: float = 0.0,
         max_tokens: int = 3000,
+        chat_templating_tokenizer: str | None = None,
     ) -> AsyncVLLMApiScopeGuard: ...
 
     @overload
     def __new__(
         cls,
         backend: Literal["api"],
+        model: DefaultModel | str = "scope-guard",
         api_url: str = "http://localhost:8000",
-        custom_headers: dict[str, str] = {},
-        skip_evidences: bool = False,
         api_key: str | None = None,
+        skip_evidences: bool = False,
+        custom_headers: dict[str, str] = {},
     ) -> AsyncAPIScopeGuard: ...
 
     def __new__(cls, backend: str, *args, **kwargs):
@@ -248,10 +262,14 @@ class AsyncScopeGuard(BaseScopeGuard):
         conversation: str | dict | list[dict],
         ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> ScopeGuardOutput:
         conversation = self._validate_conversation(conversation)
         return await self._validate(
-            conversation, ai_service_description, skip_evidences
+            conversation,
+            ai_service_description=ai_service_description,
+            skip_evidences=skip_evidences,
+            model=model,
         )
 
     async def _validate(
@@ -259,6 +277,7 @@ class AsyncScopeGuard(BaseScopeGuard):
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> ScopeGuardOutput:
         raise NotImplementedError
 
@@ -268,6 +287,7 @@ class AsyncScopeGuard(BaseScopeGuard):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> list[ScopeGuardOutput]:
         if len(conversations) == 0:
             return []
@@ -279,9 +299,10 @@ class AsyncScopeGuard(BaseScopeGuard):
 
         return await self._batch_validate(
             validated_conversations,
-            ai_service_description,
-            ai_service_descriptions,
-            skip_evidences,
+            ai_service_description=ai_service_description,
+            ai_service_descriptions=ai_service_descriptions,
+            skip_evidences=skip_evidences,
+            model=model,
         )
 
     async def _batch_validate(
@@ -290,5 +311,6 @@ class AsyncScopeGuard(BaseScopeGuard):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> list[ScopeGuardOutput]:
         raise NotImplementedError

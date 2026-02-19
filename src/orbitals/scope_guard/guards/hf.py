@@ -50,7 +50,13 @@ class HuggingFaceScopeGuard(ScopeGuard):
         conversation: ScopeGuardInput,
         ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> ScopeGuardOutput:
+        if model is not None:
+            raise NotImplementedError(
+                "Model selection is not implemented for the hf backend"
+            )
+
         generated_text = self._pipeline(
             inputs=(conversation, ai_service_description),
             **(
@@ -83,7 +89,13 @@ class HuggingFaceScopeGuard(ScopeGuard):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        model: str | None = None,
     ) -> list[ScopeGuardOutput]:
+        if model is not None:
+            raise NotImplementedError(
+                "Model selection is not implemented for the hf backend"
+            )
+
         if ai_service_descriptions is not None:
             pipeline_inputs = [
                 (c, ad) for c, ad in zip(conversations, ai_service_descriptions)
