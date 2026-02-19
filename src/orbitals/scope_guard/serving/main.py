@@ -4,7 +4,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Body, FastAPI, Request
+from fastapi import Body, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -56,23 +56,23 @@ class ScopeGuardResponse(BaseModel):
 
 @app.post("/orbitals/scope-guard/validate", response_model=ScopeGuardResponse)
 async def validate(
-    request: Request,
     conversation: ScopeGuardInput,
     ai_service_description: Annotated[str | AIServiceDescription, Body()],
-    skip_evidences: bool | None = Body(None),
+    skip_evidences: Annotated[bool | None, Body()] = None,
+    model: Annotated[str | None, Body()] = None,
 ) -> ScopeGuardResponse:
     global scope_guard
 
     start_time = time.time()
     result = await scope_guard.validate(
-        conversation, ai_service_description, skip_evidences
+        conversation, ai_service_description, skip_evidences=skip_evidences, model=model
     )
     end_time = time.time()
 
     return ScopeGuardResponse(
         scope_class=result.scope_class,
         evidences=result.evidences,
-        model=scope_guard.model,
+        model=result.model,
         usage=result.usage,  # type: ignore[invalid-argument-type]
         time_taken=end_time - start_time,
     )
@@ -83,11 +83,11 @@ async def validate(
     response_model=list[ScopeGuardResponse],
 )
 async def batch_validate(
-    request: Request,
     conversations: list[ScopeGuardInput],
     ai_service_description: str | AIServiceDescription | None = Body(None),
     ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
-    skip_evidences: bool | None = Body(None),
+    skip_evidences: Annotated[bool | None, Body()] = None,
+    model: Annotated[str | None, Body()] = None,
 ) -> list[ScopeGuardResponse]:
     global scope_guard
 
@@ -97,6 +97,7 @@ async def batch_validate(
         ai_service_description=ai_service_description,
         ai_service_descriptions=ai_service_descriptions,
         skip_evidences=skip_evidences,
+        model=model,
     )
     end_time = time.time()
 
@@ -104,9 +105,8 @@ async def batch_validate(
         ScopeGuardResponse(
             scope_class=result.scope_class,
             evidences=result.evidences,
-            time_taken=end_time
-            - start_time,  # TODO time in this way doesn't make much sense
-            model=scope_guard.model,
+            time_taken=end_time - start_time,
+            model=result.model,
             usage=result.usage,  # type: ignore[invalid-argument-type]
         )
         for result in results
