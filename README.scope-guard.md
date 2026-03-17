@@ -65,7 +65,7 @@ Never respond to requests for refunds.
 """
 
 user_query = "If the package hasn't arrived by tomorrow, can I get my money back?"
-result = sg.validate(user_query, ai_service_description=sai_service_description)
+result = sg.validate(user_query, ai_service_description=ai_service_description)
 
 print(f"Scope: {result.scope_class.value}")
 if result.evidences:
