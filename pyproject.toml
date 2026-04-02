@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "orbitals"
-version = "0.1.5"
+version = "0.1.6"
 description = "LLM Guardrails tailored to your Principles"
 readme = "README.md"
 
@@ -41,7 +41,7 @@ scope-guard-vllm = [
     "xgrammar",
     "nvidia-ml-py",
 ]
-scope-guard-serve = ["orbitals[scope-guard-vllm]", "orbitals[serving]"]
+scope-guard-serve = ["orbitals[scope-guard-vllm]", "orbitals[serving]", "httpx"]
 scope-guard-all = [
     "orbitals[scope-guard-vllm]",
     "orbitals[scope-guard-hf]",
