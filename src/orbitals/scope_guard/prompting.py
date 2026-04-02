@@ -62,7 +62,11 @@ def dump_conversation(conversation: ScopeGuardInput) -> str:
     else:
         raise NotImplementedError
 
-    assert dict_conv[-1].startswith("User")
+    if not dict_conv[-1].startswith("User"):
+        raise ValueError(
+            "The last message in the conversation must be from the user, representing the LAST USER MESSAGE to classify."
+        )
+
     dict_conv[-1] = dict_conv[-1].replace("User\n", "LAST USER MESSAGE\n")
     return "\n\n".join(dict_conv)
 
