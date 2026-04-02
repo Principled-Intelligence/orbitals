@@ -165,7 +165,7 @@ class ScopeGuard(BaseScopeGuard):
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
-        custom_headers: dict[str, str] = {},
+        custom_headers: dict[str, str] | None = None,
     ) -> APIScopeGuard: ...
 
     def __new__(cls, backend: str = "hf", *args, **kwargs):
@@ -245,7 +245,7 @@ class AsyncScopeGuard(BaseScopeGuard):
         temperature: float = 0.0,
         max_tokens: int = 3000,
         chat_templating_tokenizer: str | None = None,
-        include_system_prompt_in_usage: bool = False,
+        include_system_prompt_in_usage_reporting: bool = False,
     ) -> AsyncVLLMApiScopeGuard: ...
 
     @overload
@@ -256,7 +256,7 @@ class AsyncScopeGuard(BaseScopeGuard):
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
-        custom_headers: dict[str, str] = {},
+        custom_headers: dict[str, str] | None = None,
     ) -> AsyncAPIScopeGuard: ...
 
     def __new__(cls, backend: str, *args, **kwargs):

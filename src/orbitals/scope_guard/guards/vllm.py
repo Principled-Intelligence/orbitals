@@ -149,7 +149,7 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         temperature: float = 0.0,
         max_tokens: int = 3000,
         chat_templating_tokenizer: str | None = None,
-        include_system_prompt_in_usage: bool = False,
+        include_system_prompt_in_usage_reporting: bool = False,
     ):
         super().__init__(backend)
         self.default_model_name = self.maybe_map_model(model)
@@ -162,7 +162,7 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         self.vllm_serving_url = vllm_serving_url
         self.vllm_temperature = temperature
         self.vllm_max_tokens = max_tokens
-        self.include_system_prompt_in_usage = include_system_prompt_in_usage
+        self.include_system_prompt_in_usage_reporting = include_system_prompt_in_usage_reporting
 
     async def _handle_request(
         self,
@@ -230,7 +230,7 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
 
         system_prompt_tokens = (
             0
-            if self.include_system_prompt_in_usage
+            if self.include_system_prompt_in_usage_reporting
             else len(tokenizer.encode(SYSTEM_PROMPT))
         )
 

@@ -68,19 +68,19 @@ def _build_batch_request_data(
 
 def _maybe_get_api_key(
     args_api_key: str | None,
-    custom_headers: dict[str, str],
+    custom_headers: dict[str, str] | None,
 ) -> str | None:
     if args_api_key is not None:
-        logging.warning("Using API key from argument")
+        logging.debug("Using API key from argument")
         return args_api_key
 
-    if "X-API-Key" in custom_headers:
-        logging.warning("Using API key from custom headers")
+    if custom_headers is not None and "X-API-Key" in custom_headers:
+        logging.debug("Using API key from custom headers")
         return custom_headers.pop("X-API-Key")
 
     api_key = os.environ.get("PRINCIPLED_API_KEY")
     if api_key is not None:
-        logging.warning("Using API key from environment variable")
+        logging.debug("Using API key from environment variable")
 
     return api_key
 
@@ -94,14 +94,14 @@ class APIScopeGuard(ScopeGuard):
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
-        custom_headers: dict[str, str] = {},
+        custom_headers: dict[str, str] | None = None,
     ):
         super().__init__(backend)
         self.default_model = self.maybe_map_model(model)
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
         self.skip_evidences = skip_evidences
-        self.custom_headers = custom_headers
+        self.custom_headers = custom_headers if custom_headers is not None else {}
         if self.api_key is not None:
             self.custom_headers["X-API-Key"] = self.api_key
 
@@ -182,14 +182,14 @@ class AsyncAPIScopeGuard(AsyncScopeGuard):
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
-        custom_headers: dict[str, str] = {},
+        custom_headers: dict[str, str] | None = None,
     ):
         super().__init__(backend)
         self.default_model = self.maybe_map_model(model)
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
         self.skip_evidences = skip_evidences
-        self.custom_headers = custom_headers
+        self.custom_headers = custom_headers if custom_headers is not None else {}
         if self.api_key is not None:
             self.custom_headers["X-API-Key"] = self.api_key
 
