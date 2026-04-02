@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -88,7 +87,7 @@ async def validate(
 async def batch_validate(
     conversations: list[ScopeGuardInput],
     ai_service_description: str | AIServiceDescription | None = Body(None),
-    ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
+    ai_service_descriptions: list[str] | list[AIServiceDescription] | None = Body(None),
     skip_evidences: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
 ) -> list[ScopeGuardResponse]:
