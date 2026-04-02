@@ -65,7 +65,10 @@ async def validate(
 
     start_time = time.time()
     result = await scope_guard.validate(
-        conversation, ai_service_description, skip_evidences=skip_evidences, model=model
+        conversation,
+        ai_service_description=ai_service_description,
+        skip_evidences=skip_evidences,
+        model=model,
     )
     end_time = time.time()
 
