@@ -245,7 +245,7 @@ class AsyncScopeGuard(BaseScopeGuard):
         temperature: float = 0.0,
         max_tokens: int = 3000,
         chat_templating_tokenizer: str | None = None,
-        include_system_prompt_in_usage_reporting: bool = False,
+        count_system_prompt_in_usage: bool = False,
     ) -> AsyncVLLMApiScopeGuard: ...
 
     @overload
