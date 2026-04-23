@@ -3322,10 +3322,11 @@ wheels = [
 
 [[package]]
 name = "orbitals"
-version = "0.1.8"
+version = "0.1.10"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
+    { name = "loguru" },
     { name = "pydantic" },
     { name = "requests" },
     { name = "typer" },
@@ -3339,6 +3340,36 @@ all = [
     { name = "nvidia-ml-py" },
     { name = "transformers" },
     { name = "uvicorn" },
+    { name = "vllm" },
+    { name = "xgrammar" },
+]
+claim-extractor-all = [
+    { name = "accelerate" },
+    { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
+    { name = "nvidia-ml-py" },
+    { name = "transformers" },
+    { name = "uvicorn" },
+    { name = "vllm" },
+    { name = "xgrammar" },
+]
+claim-extractor-hf = [
+    { name = "accelerate" },
+    { name = "nvidia-ml-py" },
+    { name = "transformers" },
+]
+claim-extractor-serve = [
+    { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
+    { name = "nvidia-ml-py" },
+    { name = "transformers" },
+    { name = "uvicorn" },
+    { name = "vllm" },
+    { name = "xgrammar" },
+]
+claim-extractor-vllm = [
+    { name = "nvidia-ml-py" },
+    { name = "transformers" },
     { name = "vllm" },
     { name = "xgrammar" },
 ]
@@ -3389,28 +3420,43 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "accelerate", marker = "extra == 'claim-extractor-hf'", specifier = ">=1.11.0" },
     { name = "accelerate", marker = "extra == 'scope-guard-hf'", specifier = ">=1.11.0" },
     { name = "aiohttp" },
     { name = "fastapi", extras = ["standard"], marker = "extra == 'serving'", specifier = ">=0.119.1" },
+    { name = "httpx", marker = "extra == 'claim-extractor-serve'" },
     { name = "httpx", marker = "extra == 'scope-guard-serve'" },
+    { name = "loguru", specifier = ">=0.7.3" },
+    { name = "nvidia-ml-py", marker = "extra == 'claim-extractor-hf'" },
+    { name = "nvidia-ml-py", marker = "extra == 'claim-extractor-vllm'" },
     { name = "nvidia-ml-py", marker = "extra == 'scope-guard-hf'" },
     { name = "nvidia-ml-py", marker = "extra == 'scope-guard-vllm'" },
+    { name = "orbitals", extras = ["claim-extractor-all"], marker = "extra == 'all'" },
+    { name = "orbitals", extras = ["claim-extractor-hf"], marker = "extra == 'claim-extractor-all'" },
+    { name = "orbitals", extras = ["claim-extractor-serve"], marker = "extra == 'claim-extractor-all'" },
+    { name = "orbitals", extras = ["claim-extractor-vllm"], marker = "extra == 'claim-extractor-all'" },
+    { name = "orbitals", extras = ["claim-extractor-vllm"], marker = "extra == 'claim-extractor-serve'" },
     { name = "orbitals", extras = ["scope-guard-all"], marker = "extra == 'all'" },
     { name = "orbitals", extras = ["scope-guard-hf"], marker = "extra == 'scope-guard-all'" },
     { name = "orbitals", extras = ["scope-guard-serve"], marker = "extra == 'scope-guard-all'" },
     { name = "orbitals", extras = ["scope-guard-vllm"], marker = "extra == 'scope-guard-all'" },
     { name = "orbitals", extras = ["scope-guard-vllm"], marker = "extra == 'scope-guard-serve'" },
+    { name = "orbitals", extras = ["serving"], marker = "extra == 'claim-extractor-serve'" },
     { name = "orbitals", extras = ["serving"], marker = "extra == 'scope-guard-serve'" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "requests" },
+    { name = "transformers", marker = "extra == 'claim-extractor-hf'", specifier = ">=5.5.0,<6.0.0" },
+    { name = "transformers", marker = "extra == 'claim-extractor-vllm'", specifier = ">=5.5.0,<6.0.0" },
     { name = "transformers", marker = "extra == 'scope-guard-hf'", specifier = ">=5.5.0,<6.0.0" },
     { name = "transformers", marker = "extra == 'scope-guard-vllm'", specifier = ">=5.5.0,<6.0.0" },
     { name = "typer", specifier = ">=0.12.3" },
     { name = "uvicorn", marker = "extra == 'serving'", specifier = ">=0.29.0" },
+    { name = "vllm", marker = "extra == 'claim-extractor-vllm'", specifier = ">=0.19.1" },
     { name = "vllm", marker = "extra == 'scope-guard-vllm'", specifier = ">=0.19.1" },
+    { name = "xgrammar", marker = "extra == 'claim-extractor-vllm'" },
     { name = "xgrammar", marker = "extra == 'scope-guard-vllm'" },
 ]
-provides-extras = ["serving", "scope-guard-hf", "scope-guard-vllm", "scope-guard-serve", "scope-guard-all", "all"]
+provides-extras = ["serving", "scope-guard-hf", "scope-guard-vllm", "scope-guard-serve", "scope-guard-all", "claim-extractor-hf", "claim-extractor-vllm", "claim-extractor-serve", "claim-extractor-all", "all"]
 
 [package.metadata.requires-dev]
 dev = [
