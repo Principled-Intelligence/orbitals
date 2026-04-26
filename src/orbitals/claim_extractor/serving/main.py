@@ -3,7 +3,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Body, FastAPI
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -13,7 +13,7 @@ from orbitals.claim_extractor.modeling import (
     ClaimExtractorInput,
     Extractions,
 )
-from orbitals.types import AIServiceDescription, LLMUsage
+from orbitals.types import AIServiceDescription, ConversationMessage, LLMUsage
 
 claim_extractor: AsyncVLLMApiClaimExtractor
 
@@ -49,6 +49,13 @@ app.add_middleware(
 
 class ClaimExtractorResponse(BaseModel):
     extractions: Extractions
+    model: str
+    usage: LLMUsage
+    time_taken: float
+
+
+class ConversationClaimExtractorResponse(BaseModel):
+    extractions: list[Extractions]
     model: str
     usage: LLMUsage
     time_taken: float
@@ -118,3 +125,56 @@ async def batch_extract(
         )
         for result in results
     ]
+
+
+@app.post(
+    "/orbitals/claim-extractor/extract-conversation",
+    response_model=ConversationClaimExtractorResponse,
+)
+async def extract_conversation(
+    conversation: ClaimExtractorInput,
+    ai_service_description: Annotated[
+        str | AIServiceDescription | None, Body()
+    ] = None,
+    skip_evidences: Annotated[bool | None, Body()] = None,
+    use_guided_prompt: Annotated[bool | None, Body()] = None,
+    model: Annotated[str | None, Body()] = None,
+) -> ConversationClaimExtractorResponse:
+    global claim_extractor
+
+    if isinstance(conversation, str):
+        messages = [ConversationMessage(role="assistant", content=conversation)]
+    elif isinstance(conversation, ConversationMessage):
+        messages = [conversation]
+    else:
+        messages = list(conversation)
+
+    if len(messages) == 0:
+        raise HTTPException(
+            status_code=400, detail="conversation must contain at least one message"
+        )
+
+    prefixes = [messages[: i + 1] for i in range(len(messages))]
+
+    start_time = time.time()
+    results = await claim_extractor.batch_extract(
+        prefixes,
+        ai_service_description=ai_service_description,
+        skip_evidences=skip_evidences,
+        use_guided_prompt=use_guided_prompt,
+        model=model,
+    )
+    end_time = time.time()
+
+    total_usage = LLMUsage(
+        prompt_tokens=sum(r.usage.prompt_tokens for r in results),
+        completion_tokens=sum(r.usage.completion_tokens for r in results),
+        total_tokens=sum(r.usage.total_tokens for r in results),
+    )
+
+    return ConversationClaimExtractorResponse(
+        extractions=[r.extractions for r in results],
+        model=results[0].model,
+        usage=total_usage,
+        time_taken=end_time - start_time,
+    )
