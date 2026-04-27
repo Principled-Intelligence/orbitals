@@ -18,9 +18,7 @@ from ..modeling import (
     ClaimExtractorOutput,
 )
 from ..prompting import (
-    SYSTEM_PROMPT_IC_EXTRACTION,
     SYSTEM_PROMPT_ICE_EXTRACTION,
-    SYSTEM_PROMPT_ICE_EXTRACTION_GUIDED,
     ExtractionsResponseModel,
     build_prompt,
 )
@@ -34,16 +32,6 @@ def _get_tokenizer(model_name: str) -> transformers.PreTrainedTokenizer:
     return transformers.AutoTokenizer.from_pretrained(model_name)
 
 
-def _select_system_prompt(skip_evidences: bool, use_guided_prompt: bool) -> str:
-    if skip_evidences:
-        return SYSTEM_PROMPT_IC_EXTRACTION
-    return (
-        SYSTEM_PROMPT_ICE_EXTRACTION_GUIDED
-        if use_guided_prompt
-        else SYSTEM_PROMPT_ICE_EXTRACTION
-    )
-
-
 @ClaimExtractor.register_extractor("vllm")
 class VLLMClaimExtractor(ClaimExtractor):
     def __init__(
@@ -51,7 +39,6 @@ class VLLMClaimExtractor(ClaimExtractor):
         backend: Literal["vllm"] = "vllm",
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = False,
-        use_guided_prompt: bool = False,
         temperature: float = 0.0,
         max_tokens: int = 20_000,
         max_model_len: int = 40_000,
@@ -67,7 +54,6 @@ class VLLMClaimExtractor(ClaimExtractor):
         super().__init__(backend)
         self.model = self.maybe_map_model(model)
         self.skip_evidences = skip_evidences
-        self.use_guided_prompt = use_guided_prompt
         self.llm = vllm.LLM(
             model=self.model,
             max_model_len=max_model_len,
@@ -86,14 +72,12 @@ class VLLMClaimExtractor(ClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
-        use_guided_prompt: bool | None = None,
         **kwargs,
     ) -> ClaimExtractorOutput:
         return self._batch_extract(
             [conversation],
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
-            use_guided_prompt=use_guided_prompt,
         )[0]
 
     def _batch_extract(
@@ -103,16 +87,10 @@ class VLLMClaimExtractor(ClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
-        use_guided_prompt: bool | None = None,
         **kwargs,
     ) -> list[ClaimExtractorOutput]:
         resolved_skip_evidences = (
             skip_evidences if skip_evidences is not None else self.skip_evidences
-        )
-        resolved_use_guided_prompt = (
-            use_guided_prompt
-            if use_guided_prompt is not None
-            else self.use_guided_prompt
         )
 
         if ai_service_descriptions is not None:
@@ -128,7 +106,6 @@ class VLLMClaimExtractor(ClaimExtractor):
                 c,
                 ad,
                 skip_evidences=resolved_skip_evidences,
-                use_guided_prompt=resolved_use_guided_prompt,
             )
             for c, ad in zip(conversations, descriptions)
         ]
@@ -164,7 +141,6 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         backend: Literal["vllm-api", "vllm-async-api"] = "vllm-api",
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = False,
-        use_guided_prompt: bool = False,
         vllm_serving_url: str = "http://localhost:8000",
         temperature: float = 0.0,
         max_tokens: int = 20_000,
@@ -179,7 +155,6 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
             else self.default_model_name
         )
         self.skip_evidences = skip_evidences
-        self.use_guided_prompt = use_guided_prompt
         self.vllm_serving_url = vllm_serving_url
         self.vllm_temperature = temperature
         self.vllm_max_tokens = max_tokens
@@ -191,7 +166,6 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         conversation: ClaimExtractorInput,
         ai_service_description: str | AIServiceDescription | None,
         skip_evidences: bool | None,
-        use_guided_prompt: bool | None,
         prefill: bool,
         chat_templating_tokenizer: str | None = None,
     ) -> ClaimExtractorOutput:
@@ -210,18 +184,12 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         resolved_skip_evidences = (
             skip_evidences if skip_evidences is not None else self.skip_evidences
         )
-        resolved_use_guided_prompt = (
-            use_guided_prompt
-            if use_guided_prompt is not None
-            else self.use_guided_prompt
-        )
 
         prompt = build_prompt(
             tokenizer=tokenizer,
             conversation=conversation,
             ai_service_description=ai_service_description,
             skip_evidences=resolved_skip_evidences,
-            use_guided_prompt=resolved_use_guided_prompt,
             prefill=prefill,
         )
 
@@ -256,13 +224,7 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         system_prompt_tokens = (
             0
             if self.count_system_prompt_in_usage
-            else len(
-                tokenizer.encode(
-                    _select_system_prompt(
-                        resolved_skip_evidences, resolved_use_guided_prompt
-                    )
-                )
-            )
+            else len(tokenizer.encode(SYSTEM_PROMPT_ICE_EXTRACTION))
         )
 
         return ClaimExtractorOutput(
@@ -284,7 +246,6 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
-        use_guided_prompt: bool | None = None,
         model: str | None = None,
         chat_templating_tokenizer: str | None = None,
         **kwargs,
@@ -293,7 +254,6 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
             conversations=[conversation],
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
-            use_guided_prompt=use_guided_prompt,
             model=model,
             chat_templating_tokenizer=chat_templating_tokenizer,
         )
@@ -306,7 +266,6 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
-        use_guided_prompt: bool | None = None,
         model: str | None = None,
         chat_templating_tokenizer: str | None = None,
         **kwargs,
@@ -329,7 +288,6 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
                 conversation=c,
                 ai_service_description=aisd,
                 skip_evidences=skip_evidences,
-                use_guided_prompt=use_guided_prompt,
                 # TODO supporting True on this parameter is a bit tricky
                 # problem is the grammar-based decoding, which is unaware of the prefilling
                 prefill=False,

@@ -31,9 +31,6 @@ def setup_fastapi_logging():
 def serve(
     vllm_model: str = typer.Argument(..., help="The model used for vLLM serving"),
     skip_evidences: bool = typer.Option(False, help="Whether to skip evidences"),
-    use_guided_prompt: bool = typer.Option(
-        False, help="Whether to use the ICE-guided extraction prompt"
-    ),
     port: int = typer.Option(
         8000, "-p", "--port", help="The port to use for the server"
     ),
@@ -59,9 +56,6 @@ def serve(
     os.environ["CLAIM_EXTRACTOR_VLLM_MODEL"] = vllm_model
     os.environ["CLAIM_EXTRACTOR_VLLM_SERVING_URL"] = f"http://localhost:{vllm_port}"
     os.environ["CLAIM_EXTRACTOR_SKIP_EVIDENCES"] = str(1) if skip_evidences else str(0)
-    os.environ["CLAIM_EXTRACTOR_USE_GUIDED_PROMPT"] = (
-        str(1) if use_guided_prompt else str(0)
-    )
 
     # Set up vLLM logging configuration
     vllm_logging_config = (

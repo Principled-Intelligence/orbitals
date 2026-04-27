@@ -18,7 +18,6 @@ def _build_request_data(
     model: str,
     conversation: ClaimExtractorInput,
     skip_evidences: bool,
-    use_guided_prompt: bool,
     ai_service_description: str | AIServiceDescription | None,
 ) -> dict:
     return {
@@ -34,7 +33,6 @@ def _build_request_data(
             else {}
         ),
         "skip_evidences": skip_evidences,
-        "use_guided_prompt": use_guided_prompt,
     }
 
 
@@ -42,7 +40,6 @@ def _build_batch_request_data(
     model: str,
     conversations: list[ClaimExtractorInput],
     skip_evidences: bool,
-    use_guided_prompt: bool,
     ai_service_description: str | AIServiceDescription | None = None,
     ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
 ) -> dict:
@@ -72,7 +69,6 @@ def _build_batch_request_data(
             else {}
         ),
         "skip_evidences": skip_evidences,
-        "use_guided_prompt": use_guided_prompt,
     }
 
 
@@ -104,7 +100,6 @@ class APIClaimExtractor(ClaimExtractor):
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
-        use_guided_prompt: bool = False,
         custom_headers: dict[str, str] | None = None,
     ):
         super().__init__(backend)
@@ -112,7 +107,6 @@ class APIClaimExtractor(ClaimExtractor):
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
         self.skip_evidences = skip_evidences
-        self.use_guided_prompt = use_guided_prompt
         self.custom_headers = custom_headers if custom_headers is not None else {}
         if self.api_key is not None:
             self.custom_headers["X-API-Key"] = self.api_key
@@ -123,7 +117,6 @@ class APIClaimExtractor(ClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
-        use_guided_prompt: bool | None = None,
         model: str | None = None,
         **kwargs,
     ) -> ClaimExtractorOutput:
@@ -135,9 +128,6 @@ class APIClaimExtractor(ClaimExtractor):
                 skip_evidences=skip_evidences
                 if skip_evidences is not None
                 else self.skip_evidences,
-                use_guided_prompt=use_guided_prompt
-                if use_guided_prompt is not None
-                else self.use_guided_prompt,
                 ai_service_description=ai_service_description,
             ),
             headers={**self.custom_headers, "Content-Type": "application/json"},
@@ -158,7 +148,6 @@ class APIClaimExtractor(ClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
-        use_guided_prompt: bool | None = None,
         model: str | None = None,
         **kwargs,
     ) -> list[ClaimExtractorOutput]:
@@ -170,9 +159,6 @@ class APIClaimExtractor(ClaimExtractor):
                 skip_evidences=skip_evidences
                 if skip_evidences is not None
                 else self.skip_evidences,
-                use_guided_prompt=use_guided_prompt
-                if use_guided_prompt is not None
-                else self.use_guided_prompt,
                 ai_service_description=ai_service_description,
                 ai_service_descriptions=ai_service_descriptions,
             ),
@@ -200,7 +186,6 @@ class AsyncAPIClaimExtractor(AsyncClaimExtractor):
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
-        use_guided_prompt: bool = False,
         custom_headers: dict[str, str] | None = None,
     ):
         super().__init__(backend)
@@ -208,7 +193,6 @@ class AsyncAPIClaimExtractor(AsyncClaimExtractor):
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
         self.skip_evidences = skip_evidences
-        self.use_guided_prompt = use_guided_prompt
         self.custom_headers = custom_headers if custom_headers is not None else {}
         if self.api_key is not None:
             self.custom_headers["X-API-Key"] = self.api_key
@@ -219,7 +203,6 @@ class AsyncAPIClaimExtractor(AsyncClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
-        use_guided_prompt: bool | None = None,
         model: str | None = None,
         **kwargs,
     ) -> ClaimExtractorOutput:
@@ -232,9 +215,6 @@ class AsyncAPIClaimExtractor(AsyncClaimExtractor):
                     skip_evidences=skip_evidences
                     if skip_evidences is not None
                     else self.skip_evidences,
-                    use_guided_prompt=use_guided_prompt
-                    if use_guided_prompt is not None
-                    else self.use_guided_prompt,
                     ai_service_description=ai_service_description,
                 ),
                 headers={**self.custom_headers, "Content-Type": "application/json"},
@@ -255,7 +235,6 @@ class AsyncAPIClaimExtractor(AsyncClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
-        use_guided_prompt: bool | None = None,
         model: str | None = None,
         **kwargs,
     ) -> list[ClaimExtractorOutput]:
@@ -268,9 +247,6 @@ class AsyncAPIClaimExtractor(AsyncClaimExtractor):
                     skip_evidences=skip_evidences
                     if skip_evidences is not None
                     else self.skip_evidences,
-                    use_guided_prompt=use_guided_prompt
-                    if use_guided_prompt is not None
-                    else self.use_guided_prompt,
                     ai_service_description=ai_service_description,
                     ai_service_descriptions=ai_service_descriptions,
                 ),

@@ -19,7 +19,6 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         backend: Literal["hf"] = "hf",
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = False,
-        use_guided_prompt: bool = False,
         max_new_tokens: int = 20_000,
         do_sample: bool = False,
         **kwargs,
@@ -33,13 +32,11 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         super().__init__(backend)
         self.model = self.maybe_map_model(model)
         self.skip_evidences = skip_evidences
-        self.use_guided_prompt = use_guided_prompt
         self._pipeline = pipeline(
             task="claim-extractor",
             model=self.model,
             trust_remote_code=True,
             skip_evidences=skip_evidences,
-            use_guided_prompt=use_guided_prompt,
             max_new_tokens=max_new_tokens,
             do_sample=do_sample,
             **kwargs,
@@ -48,13 +45,10 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
     def _resolve_flags(
         self,
         skip_evidences: bool | None,
-        use_guided_prompt: bool | None,
     ) -> dict[str, bool]:
         resolved: dict[str, bool] = {}
         if skip_evidences is not None:
             resolved["skip_evidences"] = skip_evidences
-        if use_guided_prompt is not None:
-            resolved["use_guided_prompt"] = use_guided_prompt
         return resolved
 
     def _extract(
@@ -63,10 +57,9 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
-        use_guided_prompt: bool | None = None,
         **kwargs,
     ) -> ClaimExtractorOutput:
-        pipeline_kwargs = self._resolve_flags(skip_evidences, use_guided_prompt)
+        pipeline_kwargs = self._resolve_flags(skip_evidences)
         generated_text = self._pipeline(
             inputs=(conversation, ai_service_description),
             **pipeline_kwargs,
@@ -87,7 +80,6 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
-        use_guided_prompt: bool | None = None,
         **kwargs,
     ) -> list[ClaimExtractorOutput]:
         if ai_service_descriptions is not None:
@@ -97,7 +89,7 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         else:
             pipeline_inputs = [(c, ai_service_description) for c in conversations]
 
-        pipeline_kwargs = self._resolve_flags(skip_evidences, use_guided_prompt)
+        pipeline_kwargs = self._resolve_flags(skip_evidences)
         pipeline_outputs = self._pipeline(
             pipeline_inputs,
             **pipeline_kwargs,

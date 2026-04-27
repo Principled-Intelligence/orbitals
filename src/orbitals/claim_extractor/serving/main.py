@@ -26,8 +26,6 @@ async def lifespan(app: FastAPI):
         backend="vllm-api",
         model=os.environ["CLAIM_EXTRACTOR_VLLM_MODEL"],
         skip_evidences=os.environ.get("CLAIM_EXTRACTOR_SKIP_EVIDENCES", "0") == "1",
-        use_guided_prompt=os.environ.get("CLAIM_EXTRACTOR_USE_GUIDED_PROMPT", "0")
-        == "1",
         vllm_serving_url=os.environ["CLAIM_EXTRACTOR_VLLM_SERVING_URL"],
     )
 
@@ -68,7 +66,6 @@ async def extract(
         str | AIServiceDescription | None, Body()
     ] = None,
     skip_evidences: Annotated[bool | None, Body()] = None,
-    use_guided_prompt: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
 ) -> ClaimExtractorResponse:
     global claim_extractor
@@ -78,7 +75,6 @@ async def extract(
         conversation,
         ai_service_description=ai_service_description,
         skip_evidences=skip_evidences,
-        use_guided_prompt=use_guided_prompt,
         model=model,
     )
     end_time = time.time()
@@ -100,7 +96,6 @@ async def batch_extract(
     ai_service_description: str | AIServiceDescription | None = Body(None),
     ai_service_descriptions: list[str] | list[AIServiceDescription] | None = Body(None),
     skip_evidences: Annotated[bool | None, Body()] = None,
-    use_guided_prompt: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
 ) -> list[ClaimExtractorResponse]:
     global claim_extractor
@@ -111,7 +106,6 @@ async def batch_extract(
         ai_service_description=ai_service_description,
         ai_service_descriptions=ai_service_descriptions,
         skip_evidences=skip_evidences,
-        use_guided_prompt=use_guided_prompt,
         model=model,
     )
     end_time = time.time()
@@ -137,7 +131,6 @@ async def extract_conversation(
         str | AIServiceDescription | None, Body()
     ] = None,
     skip_evidences: Annotated[bool | None, Body()] = None,
-    use_guided_prompt: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
 ) -> ConversationClaimExtractorResponse:
     global claim_extractor
@@ -161,7 +154,6 @@ async def extract_conversation(
         prefixes,
         ai_service_description=ai_service_description,
         skip_evidences=skip_evidences,
-        use_guided_prompt=use_guided_prompt,
         model=model,
     )
     end_time = time.time()

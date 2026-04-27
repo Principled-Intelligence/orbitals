@@ -19,7 +19,6 @@ class ClaimExtractorPipeline(Pipeline):
         model,
         tokenizer=None,
         skip_evidences: bool = False,
-        use_guided_prompt: bool = False,
         max_new_tokens: int = 20_000,
         do_sample: bool = False,
         **kwargs,
@@ -42,7 +41,6 @@ class ClaimExtractorPipeline(Pipeline):
                 tokenizer.pad_token = tokenizer.eos_token
 
         self.skip_evidences = skip_evidences
-        self.use_guided_prompt = use_guided_prompt
         self.max_new_tokens = max_new_tokens
         self.do_sample = do_sample
 
@@ -56,10 +54,6 @@ class ClaimExtractorPipeline(Pipeline):
         if "skip_evidences" in kwargs or self.skip_evidences:
             preprocess_kwargs["skip_evidences"] = kwargs.get(
                 "skip_evidences", self.skip_evidences
-            )
-        if "use_guided_prompt" in kwargs or self.use_guided_prompt:
-            preprocess_kwargs["use_guided_prompt"] = kwargs.get(
-                "use_guided_prompt", self.use_guided_prompt
             )
 
         return (
@@ -75,7 +69,6 @@ class ClaimExtractorPipeline(Pipeline):
             str | orbitals.types.AIServiceDescription | None,
         ],
         skip_evidences: bool = False,
-        use_guided_prompt: bool = False,
     ):
         conversation, ai_service_description = inputs
 
@@ -83,7 +76,6 @@ class ClaimExtractorPipeline(Pipeline):
             conversation,
             ai_service_description,
             skip_evidences=skip_evidences,
-            use_guided_prompt=use_guided_prompt,
         )
 
         text = self.tokenizer.apply_chat_template(
