@@ -142,7 +142,7 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = False,
         vllm_serving_url: str = "http://localhost:8000",
-        temperature: float = 0.0,
+        temperature: float = 0.3,
         max_tokens: int = 20_000,
         chat_templating_tokenizer: str | None = None,
         count_system_prompt_in_usage: bool = False,
@@ -201,6 +201,8 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
                     "prompt": prompt,
                     "temperature": self.vllm_temperature,
                     "max_tokens": self.vllm_max_tokens,
+                    "repetition_penalty": 1.2,
+                    "no_repeat_ngram_size": 4,
                     "structured_outputs": {
                         "json": ExtractionsResponseModel.model_json_schema()
                     },
