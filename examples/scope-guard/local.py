@@ -43,7 +43,7 @@ def main():
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("backend", type=str, choices=["hf", "vllm"])
+    parser.add_argument("backend", type=str, choices=["hf", "vllm", "mlx"])
     parser.add_argument("model", type=str)
     parser.add_argument("-s", "--skip-evidences", action="store_true", default=False)
     return parser.parse_args()

@@ -8,6 +8,7 @@ from pydantic import ValidationError
 if TYPE_CHECKING:
     from .api import APIScopeGuard, AsyncAPIScopeGuard
     from .hf import HuggingFaceScopeGuard
+    from .mlx import MLXScopeGuard
     from .vllm import AsyncVLLMApiScopeGuard, VLLMScopeGuard
 
 from ...types import AIServiceDescription
@@ -143,6 +144,19 @@ class ScopeGuard(BaseScopeGuard):
         do_sample: bool = False,
         **kwargs,
     ) -> HuggingFaceScopeGuard: ...
+
+    @overload
+    def __new__(
+        cls,
+        backend: Literal["mlx"],
+        model: DefaultModel | str = "scope-guard",
+        skip_evidences: bool = False,
+        max_tokens: int = 3000,
+        temp: float = 0.0,
+        repetition_penalty: float | None = None,
+        repetition_context_size: int | None = None,
+        top_p: float | None = None,
+    ) -> MLXScopeGuard: ...
 
     @overload
     def __new__(

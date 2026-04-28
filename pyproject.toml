@@ -41,10 +41,14 @@ scope-guard-vllm = [
     "xgrammar",
     "nvidia-ml-py",
 ]
+scope-guard-mlx = [
+    "mlx-lm>=0.21.0",
+]
 scope-guard-serve = ["orbitals[scope-guard-vllm]", "orbitals[serving]", "httpx"]
 scope-guard-all = [
     "orbitals[scope-guard-vllm]",
     "orbitals[scope-guard-hf]",
+    "orbitals[scope-guard-mlx]",
     "orbitals[scope-guard-serve]",
 ]
 
