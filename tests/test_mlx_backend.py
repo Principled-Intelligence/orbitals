@@ -24,15 +24,21 @@ from orbitals.scope_guard import ScopeClass, ScopeGuard, ScopeGuardOutput
 from orbitals.types import AIServiceDescription
 
 
+_DEFAULT_EVIDENCES = object()
+
+
 def _scope_guard_json(
     *,
     scope_class: str = "Restricted",
-    evidences: list[str] | None = None,
+    evidences: list[str] | None | object = _DEFAULT_EVIDENCES,
 ) -> str:
+    if evidences is _DEFAULT_EVIDENCES:
+        evidences = ["No refunds."]
+
     return json.dumps(
         {
             "scope_class": scope_class,
-            "evidences": evidences if evidences is not None else ["No refunds."],
+            "evidences": evidences,
         }
     )
 
