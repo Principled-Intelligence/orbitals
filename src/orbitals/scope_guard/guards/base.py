@@ -161,7 +161,7 @@ class ScopeGuard(BaseScopeGuard):
     def __new__(
         cls,
         backend: Literal["api"],
-        model: DefaultModel | str = "scope-guard",
+        model: DefaultModel | str | None = None,
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
@@ -252,7 +252,7 @@ class AsyncScopeGuard(BaseScopeGuard):
     def __new__(
         cls,
         backend: Literal["api"],
-        model: DefaultModel | str = "scope-guard",
+        model: DefaultModel | str | None = None,
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,

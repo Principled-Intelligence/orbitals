@@ -15,13 +15,13 @@ from .base import AsyncScopeGuard, DefaultModel, ScopeGuard
 
 
 def _build_request_data(
-    model: str,
+    model: str | None,
     conversation: ScopeGuardInput,
     skip_evidences: bool,
     ai_service_description: str | AIServiceDescription,
 ) -> dict:
     return {
-        "model": model,
+        **({"model": model} if model is not None else {}),
         "conversation": ScopeGuardInputTypeAdapter.dump_python(conversation),
         "ai_service_description": ai_service_description.model_dump()
         if isinstance(ai_service_description, AIServiceDescription)
@@ -31,14 +31,14 @@ def _build_request_data(
 
 
 def _build_batch_request_data(
-    model: str,
+    model: str | None,
     conversations: list[ScopeGuardInput],
     skip_evidences: bool,
     ai_service_description: str | AIServiceDescription | None = None,
     ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
 ) -> dict:
     return {
-        "model": model,
+        **({"model": model} if model is not None else {}),
         "conversations": [
             ScopeGuardInputTypeAdapter.dump_python(conversation)
             for conversation in conversations
@@ -90,14 +90,16 @@ class APIScopeGuard(ScopeGuard):
     def __init__(
         self,
         backend: Literal["api"] = "api",
-        model: DefaultModel | str = "scope-guard",
+        model: DefaultModel | str | None = None,
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
         custom_headers: dict[str, str] | None = None,
     ):
         super().__init__(backend)
-        self.default_model = self.maybe_map_model(model)
+        self.default_model = (
+            self.maybe_map_model(model) if model is not None else None
+        )
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
         self.skip_evidences = skip_evidences
@@ -178,14 +180,16 @@ class AsyncAPIScopeGuard(AsyncScopeGuard):
     def __init__(
         self,
         backend: Literal["api", "async-api"] = "api",
-        model: DefaultModel | str = "scope-guard",
+        model: DefaultModel | str | None = None,
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
         custom_headers: dict[str, str] | None = None,
     ):
         super().__init__(backend)
-        self.default_model = self.maybe_map_model(model)
+        self.default_model = (
+            self.maybe_map_model(model) if model is not None else None
+        )
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
         self.skip_evidences = skip_evidences
