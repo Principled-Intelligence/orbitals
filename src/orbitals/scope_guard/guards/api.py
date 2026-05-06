@@ -95,8 +95,12 @@ class APIScopeGuard(ScopeGuard):
         api_key: str | None = None,
         skip_evidences: bool = False,
         custom_headers: dict[str, str] | None = None,
+        include_default_safety_principles: bool = False,
     ):
-        super().__init__(backend)
+        super().__init__(
+            backend,
+            include_default_safety_principles=include_default_safety_principles,
+        )
         self.default_model = (
             self.maybe_map_model(model) if model is not None else None
         )
@@ -185,8 +189,12 @@ class AsyncAPIScopeGuard(AsyncScopeGuard):
         api_key: str | None = None,
         skip_evidences: bool = False,
         custom_headers: dict[str, str] | None = None,
+        include_default_safety_principles: bool = False,
     ):
-        super().__init__(backend)
+        super().__init__(
+            backend,
+            include_default_safety_principles=include_default_safety_principles,
+        )
         self.default_model = (
             self.maybe_map_model(model) if model is not None else None
         )

@@ -34,7 +34,12 @@ def serving_client(monkeypatch):
     class _StubAsyncGuard:
         """Drop-in stand-in for AsyncVLLMApiScopeGuard used in serving."""
 
+        def __init__(self):
+            self.validate_kwargs: dict[str, Any] = {}
+            self.batch_validate_kwargs: dict[str, Any] = {}
+
         async def validate(self, conversation, *, ai_service_description, **kwargs):
+            self.validate_kwargs = kwargs
             return ScopeGuardOutput(
                 scope_class=ScopeClass.RESTRICTED,
                 evidences=["Never respond to requests for refunds."],
@@ -52,6 +57,7 @@ def serving_client(monkeypatch):
             ai_service_descriptions=None,
             **kwargs,
         ):
+            self.batch_validate_kwargs = kwargs
             return [
                 ScopeGuardOutput(
                     scope_class=ScopeClass.DIRECTLY_SUPPORTED,
@@ -66,7 +72,9 @@ def serving_client(monkeypatch):
 
     with TestClient(serving_main.app) as client:
         # lifespan has run; swap the real guard for the stub before requests.
-        monkeypatch.setattr(serving_main, "scope_guard", _StubAsyncGuard())
+        stub = _StubAsyncGuard()
+        monkeypatch.setattr(serving_main, "scope_guard", stub)
+        setattr(client, "_scope_guard_stub", stub)
         yield client
 
 
@@ -136,6 +144,21 @@ def test_validate_accepts_multi_turn_conversation(serving_client):
     assert response.status_code == 200
 
 
+def test_validate_forwards_default_safety_principles_flag(serving_client):
+    response = serving_client.post(
+        "/orbitals/scope-guard/validate",
+        json={
+            "conversation": "hi",
+            "ai_service_description": "desc",
+            "include_default_safety_principles": True,
+        },
+    )
+
+    stub = getattr(serving_client, "_scope_guard_stub")
+    assert response.status_code == 200
+    assert stub.validate_kwargs["include_default_safety_principles"] is True
+
+
 def test_validate_rejects_missing_ai_service_description(serving_client):
     response = serving_client.post(
         "/orbitals/scope-guard/validate",
@@ -179,3 +202,18 @@ def test_batch_validate_accepts_per_conversation_descriptions(serving_client):
     )
     assert response.status_code == 200
     assert len(response.json()) == 2
+
+
+def test_batch_validate_forwards_default_safety_principles_flag(serving_client):
+    response = serving_client.post(
+        "/orbitals/scope-guard/batch-validate",
+        json={
+            "conversations": ["q1", "q2"],
+            "ai_service_description": "desc",
+            "include_default_safety_principles": True,
+        },
+    )
+
+    stub = getattr(serving_client, "_scope_guard_stub")
+    assert response.status_code == 200
+    assert stub.batch_validate_kwargs["include_default_safety_principles"] is True

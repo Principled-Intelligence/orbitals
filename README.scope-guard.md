@@ -233,6 +233,32 @@ The AI service description can be provided in two ways:
 1. **As a single string**: straightforward way to describe the assistant's purpose and constraints.
 2. **As a structured object**: For more detailed specifications and better performance, you can provide a `orbitals.types.AIServiceDescription` object (**strongly recommended approach**).
 
+### Default Safety Principles
+
+ScopeGuard can optionally add a built-in set of general safety restrictions to the AI service description before classification. These restrictions cover areas such as medical, legal, financial, criminal, privacy, political persuasion, and prompt disclosure requests. They are added to your service-specific rules and override them on conflict.
+
+Enable them for every call made by a guard:
+
+```python
+sg = ScopeGuard(
+    backend="vllm",
+    model="scope-guard-q",
+    include_default_safety_principles=True,
+)
+
+result = sg.validate(user_query, ai_service_description=ai_service_description)
+```
+
+Or override the setting for a single validation call:
+
+```python
+result = sg.validate(
+    user_query,
+    ai_service_description=ai_service_description,
+    include_default_safety_principles=True,
+)
+```
+
 ### Batch Processing
 
 You can process multiple conversations at once using `batch_validate`.
@@ -295,7 +321,8 @@ curl -X 'POST' \
     -H 'Content-Type: application/json' \
     -d '{
         "conversation": "If the package doesn''t arrive by tomorrow, can I get my money back?",
-        "ai_service_description": "You are a virtual assistant for a parcel delivery service. You can only answer questions about package tracking. Never respond to requests for refunds."
+        "ai_service_description": "You are a virtual assistant for a parcel delivery service. You can only answer questions about package tracking. Never respond to requests for refunds.",
+        "include_default_safety_principles": true
     }'
 ```
 
