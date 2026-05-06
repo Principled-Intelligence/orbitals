@@ -59,6 +59,7 @@ async def validate(
     ai_service_description: Annotated[str | AIServiceDescription, Body()],
     skip_evidences: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
+    include_default_safety_principles: Annotated[bool | None, Body()] = None,
 ) -> ScopeGuardResponse:
     global scope_guard
 
@@ -67,6 +68,7 @@ async def validate(
         conversation,
         ai_service_description=ai_service_description,
         skip_evidences=skip_evidences,
+        include_default_safety_principles=include_default_safety_principles,
         model=model,
     )
     end_time = time.time()
@@ -90,6 +92,7 @@ async def batch_validate(
     ai_service_descriptions: list[str] | list[AIServiceDescription] | None = Body(None),
     skip_evidences: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
+    include_default_safety_principles: Annotated[bool | None, Body()] = None,
 ) -> list[ScopeGuardResponse]:
     global scope_guard
 
@@ -99,6 +102,7 @@ async def batch_validate(
         ai_service_description=ai_service_description,
         ai_service_descriptions=ai_service_descriptions,
         skip_evidences=skip_evidences,
+        include_default_safety_principles=include_default_safety_principles,
         model=model,
     )
     end_time = time.time()

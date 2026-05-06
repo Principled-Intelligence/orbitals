@@ -16,6 +16,7 @@ from ..modeling import (
     ScopeGuardInputTypeAdapter,
     ScopeGuardOutput,
 )
+from ..safety_principles import augment_with_default_safety_principles
 
 DefaultModel = Literal["scope-guard"]
 
@@ -81,9 +82,39 @@ class BaseScopeGuard:
         self,
         backend: str,
         *args,
+        include_default_safety_principles: bool = False,
         **kwargs,
     ):
         self.backend = backend
+        self.include_default_safety_principles = include_default_safety_principles
+
+    def _resolve_include_default_safety_principles(
+        self, per_call_value: bool | None
+    ) -> bool:
+        if per_call_value is not None:
+            return per_call_value
+        return getattr(self, "include_default_safety_principles", False)
+
+    def _maybe_augment(
+        self,
+        ai_service_description: str | AIServiceDescription | None,
+        include: bool,
+    ) -> str | AIServiceDescription | None:
+        if not include or ai_service_description is None:
+            return ai_service_description
+        return augment_with_default_safety_principles(ai_service_description)
+
+    def _maybe_augment_list(
+        self,
+        ai_service_descriptions: list[str] | list[AIServiceDescription] | None,
+        include: bool,
+    ) -> list[str] | list[AIServiceDescription] | None:
+        if not include or ai_service_descriptions is None:
+            return ai_service_descriptions
+        return [
+            augment_with_default_safety_principles(ad)
+            for ad in ai_service_descriptions
+        ]  # type: ignore[return-value]
 
     def _validate_conversation(
         self, conversation: str | dict | list[dict]
@@ -141,6 +172,7 @@ class ScopeGuard(BaseScopeGuard):
         skip_evidences: bool = False,
         max_new_tokens: int = 3000,
         do_sample: bool = False,
+        include_default_safety_principles: bool = False,
         **kwargs,
     ) -> HuggingFaceScopeGuard: ...
 
@@ -155,6 +187,7 @@ class ScopeGuard(BaseScopeGuard):
         max_model_len: int = 30_000,
         max_num_seqs: int = 2,
         gpu_memory_utilization: float = 0.9,
+        include_default_safety_principles: bool = False,
     ) -> VLLMScopeGuard: ...
 
     @overload
@@ -166,6 +199,7 @@ class ScopeGuard(BaseScopeGuard):
         api_key: str | None = None,
         skip_evidences: bool = False,
         custom_headers: dict[str, str] | None = None,
+        include_default_safety_principles: bool = False,
     ) -> APIScopeGuard: ...
 
     def __new__(cls, backend: str = "hf", *args, **kwargs):
@@ -177,9 +211,14 @@ class ScopeGuard(BaseScopeGuard):
         *,
         ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
+        include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> ScopeGuardOutput:
         conversation = self._validate_conversation(conversation)
+        include = self._resolve_include_default_safety_principles(
+            include_default_safety_principles
+        )
+        ai_service_description = self._maybe_augment(ai_service_description, include)
         return self._validate(
             conversation,
             ai_service_description=ai_service_description,
@@ -204,6 +243,7 @@ class ScopeGuard(BaseScopeGuard):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardOutput]:
         if len(conversations) == 0:
@@ -212,6 +252,14 @@ class ScopeGuard(BaseScopeGuard):
         validated_conversations = self._validate_conversations(conversations)
         self._validate_ai_service_description_input(
             validated_conversations, ai_service_description, ai_service_descriptions
+        )
+
+        include = self._resolve_include_default_safety_principles(
+            include_default_safety_principles
+        )
+        ai_service_description = self._maybe_augment(ai_service_description, include)
+        ai_service_descriptions = self._maybe_augment_list(
+            ai_service_descriptions, include
         )
 
         return self._batch_validate(
@@ -246,6 +294,7 @@ class AsyncScopeGuard(BaseScopeGuard):
         max_tokens: int = 3000,
         chat_templating_tokenizer: str | None = None,
         count_system_prompt_in_usage: bool = False,
+        include_default_safety_principles: bool = False,
     ) -> AsyncVLLMApiScopeGuard: ...
 
     @overload
@@ -257,6 +306,7 @@ class AsyncScopeGuard(BaseScopeGuard):
         api_key: str | None = None,
         skip_evidences: bool = False,
         custom_headers: dict[str, str] | None = None,
+        include_default_safety_principles: bool = False,
     ) -> AsyncAPIScopeGuard: ...
 
     def __new__(cls, backend: str, *args, **kwargs):
@@ -268,9 +318,14 @@ class AsyncScopeGuard(BaseScopeGuard):
         *,
         ai_service_description: str | AIServiceDescription,
         skip_evidences: bool | None = None,
+        include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> ScopeGuardOutput:
         conversation = self._validate_conversation(conversation)
+        include = self._resolve_include_default_safety_principles(
+            include_default_safety_principles
+        )
+        ai_service_description = self._maybe_augment(ai_service_description, include)
         return await self._validate(
             conversation,
             ai_service_description=ai_service_description,
@@ -295,6 +350,7 @@ class AsyncScopeGuard(BaseScopeGuard):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardOutput]:
         if len(conversations) == 0:
@@ -303,6 +359,14 @@ class AsyncScopeGuard(BaseScopeGuard):
         validated_conversations = self._validate_conversations(conversations)
         self._validate_ai_service_description_input(
             validated_conversations, ai_service_description, ai_service_descriptions
+        )
+
+        include = self._resolve_include_default_safety_principles(
+            include_default_safety_principles
+        )
+        ai_service_description = self._maybe_augment(ai_service_description, include)
+        ai_service_descriptions = self._maybe_augment_list(
+            ai_service_descriptions, include
         )
 
         return await self._batch_validate(

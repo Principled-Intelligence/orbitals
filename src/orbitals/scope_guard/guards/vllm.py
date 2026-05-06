@@ -41,6 +41,7 @@ class VLLMScopeGuard(ScopeGuard):
         max_model_len: int = 30_000,
         max_num_seqs: int = 2,
         gpu_memory_utilization: float = 0.9,
+        include_default_safety_principles: bool = False,
     ):
         from ...utils import maybe_configure_gpu_usage
 
@@ -48,7 +49,10 @@ class VLLMScopeGuard(ScopeGuard):
 
         import vllm
 
-        super().__init__(backend)
+        super().__init__(
+            backend,
+            include_default_safety_principles=include_default_safety_principles,
+        )
         self.model = self.maybe_map_model(model)
         self.skip_evidences = skip_evidences
         self.llm = vllm.LLM(
@@ -150,8 +154,12 @@ class AsyncVLLMApiScopeGuard(AsyncScopeGuard):
         max_tokens: int = 3000,
         chat_templating_tokenizer: str | None = None,
         count_system_prompt_in_usage: bool = False,
+        include_default_safety_principles: bool = False,
     ):
-        super().__init__(backend)
+        super().__init__(
+            backend,
+            include_default_safety_principles=include_default_safety_principles,
+        )
         self.default_model_name = self.maybe_map_model(model)
         self.default_tokenizer_name = (
             self.maybe_map_model(chat_templating_tokenizer)

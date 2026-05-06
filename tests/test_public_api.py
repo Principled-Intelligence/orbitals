@@ -41,8 +41,10 @@ def test_scope_guard_package_all_is_exhaustive():
     import orbitals.scope_guard as sg
 
     assert set(sg.__all__) == {
+        "ADDITIONAL_SAFETY_RULES",
         "AsyncScopeGuard",
         "ScopeClass",
         "ScopeGuardOutput",
         "ScopeGuard",
+        "augment_with_default_safety_principles",
     }

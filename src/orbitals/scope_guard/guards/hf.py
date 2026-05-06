@@ -25,6 +25,7 @@ class HuggingFaceScopeGuard(ScopeGuard):
         skip_evidences: bool = False,
         max_new_tokens: int = 3000,
         do_sample: bool = False,
+        include_default_safety_principles: bool = False,
         **kwargs,
     ):
         from ...utils import maybe_configure_gpu_usage
@@ -33,7 +34,10 @@ class HuggingFaceScopeGuard(ScopeGuard):
 
         from transformers import pipeline  # noqa: F401
 
-        super().__init__(backend)
+        super().__init__(
+            backend,
+            include_default_safety_principles=include_default_safety_principles,
+        )
         self.model = self.maybe_map_model(model)
         self._pipeline = pipeline(
             task="scope-guard",
