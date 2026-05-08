@@ -100,6 +100,8 @@ class ScopeGuardPipeline(Pipeline):
                 **tokenized,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=self.do_sample,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
             )
         return {
             "output_ids": outputs,
