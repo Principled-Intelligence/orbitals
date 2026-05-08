@@ -51,7 +51,9 @@ ai_service_description = "You are a helpful assistant for ..."
 user_message = "Can I buy ..."
 
 guardrail = ScopeGuard()
-result = guardrail.validate(user_message, ai_service_description)
+result = guardrail.validate(
+    user_message, ai_service_description=ai_service_description
+)
 ```
 
 The result of a guardrail validation will indicate whether the input or output passed the guardrail checks, along with details on any violations. You can then handle violations as needed, such as by rejecting the input or modifying the output. For example:
