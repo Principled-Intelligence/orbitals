@@ -11,33 +11,34 @@ require_gpu || true
 log "running batch_extract with a single ai_service_description, model=$CLAIM_EXTRACTOR_MODEL"
 cd "$REPO_ROOT"
 
-OUTPUT="$(uv run python - <<PY
+OUTPUT="$(uv_run_python <<PY
 from orbitals.claim_extractor import ClaimExtractor
 
-ce = ClaimExtractor(backend="vllm", model="${CLAIM_EXTRACTOR_MODEL}")
+if __name__ == "__main__":
+    ce = ClaimExtractor(backend="vllm", model="${CLAIM_EXTRACTOR_MODEL}")
 
-ai_service_description = (
-    "You are a virtual assistant for a parcel delivery service. "
-    "You can only answer questions about package tracking."
-)
+    ai_service_description = (
+        "You are a virtual assistant for a parcel delivery service. "
+        "You can only answer questions about package tracking."
+    )
 
-messages = [
-    "Your package is in transit and will arrive on December 12, 2025.",
-    "Order #42 has already shipped and cannot be cancelled anymore.",
-]
+    messages = [
+        "Your package is in transit and will arrive on December 12, 2025.",
+        "Order #42 has already shipped and cannot be cancelled anymore.",
+    ]
 
-results = ce.batch_extract(
-    messages,
-    ai_service_description=ai_service_description,
-)
+    results = ce.batch_extract(
+        messages,
+        ai_service_description=ai_service_description,
+    )
 
-print(f"len={len(results)}")
-for i, r in enumerate(results):
-    n_claims = len(r.extractions.claims)
-    n_intents = len(r.extractions.intents)
-    print(f"[{i}] claims={n_claims} intents={n_intents}")
-    for claim in r.extractions.claims:
-        print(f"[{i}][{claim.subtype}] {claim.content}")
+    print(f"len={len(results)}")
+    for i, r in enumerate(results):
+        n_claims = len(r.extractions.claims)
+        n_intents = len(r.extractions.intents)
+        print(f"[{i}] claims={n_claims} intents={n_intents}")
+        for claim in r.extractions.claims:
+            print(f"[{i}][{claim.subtype}] {claim.content}")
 PY
 )"
 

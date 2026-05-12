@@ -101,6 +101,30 @@ for mod in {
     return $missing
 }
 
+uv_run_python() {
+    # Run a Python script via temp file instead of stdin (`python -`).
+    # vLLM's multiprocessing breaks with `python -` because child processes
+    # attempt to re-import __main__ from the non-existent path "<stdin>".
+    #
+    # The script is launched in its own session (via `setsid`) so we can
+    # SIGKILL any subprocesses that outlive the main interpreter. vLLM v1
+    # spawns an out-of-process EngineCore worker that is occasionally
+    # reparented to init while still holding GPU memory; if we don't reap
+    # it, the next test can't acquire the GPU.
+    local _tmpscript _pid _rc=0
+    _tmpscript="$(mktemp /tmp/orbitals-test.XXXXXX.py)"
+    cat > "$_tmpscript"
+    setsid uv run python "$_tmpscript" &
+    _pid=$!
+    wait "$_pid" || _rc=$?
+    # Kill anything still alive in the session we just created. `$_pid` is
+    # the session leader's PID because non-interactive bash backgrounds
+    # without setpgid, so setsid execs in place (no fork).
+    pkill -KILL -s "$_pid" 2>/dev/null || true
+    rm -f "$_tmpscript"
+    return $_rc
+}
+
 require_gpu() {
     if ! (cd "$REPO_ROOT" && uv run python -c "
 import sys
