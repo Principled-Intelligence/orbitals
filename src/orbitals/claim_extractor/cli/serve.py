@@ -49,6 +49,17 @@ def serve(
     vllm_gpu_memory_utilization: float = typer.Option(
         0.9, help="GPU memory utilization for vLLM"
     ),
+    vllm_enable_prefix_caching: bool = typer.Option(
+        True, help="Enable vLLM prefix caching"
+    ),
+    vllm_language_model_only: bool = typer.Option(
+        True,
+        help="Load only the language-model component of the underlying model (skips multimodal modules)",
+    ),
+    vllm_speculative_config: str = typer.Option(
+        '{"num_speculative_tokens": 4, "method": "mtp"}',
+        help="Speculative decoding config for vLLM as a JSON string. Pass an empty string to disable.",
+    ),
     vllm_extra_args: str | None = typer.Option(
         None, help="Extra arguments to pass to the vLLM server"
     ),
@@ -107,8 +118,15 @@ def serve(
         str(vllm_port),
         "--gpu-memory-utilization",
         str(vllm_gpu_memory_utilization),
-        *(shlex.split(vllm_extra_args) if vllm_extra_args is not None else []),
     ]
+    if vllm_enable_prefix_caching:
+        vllm_cmd.append("--enable-prefix-caching")
+    if vllm_language_model_only:
+        vllm_cmd.append("--language-model-only")
+    if vllm_speculative_config:
+        vllm_cmd.extend(["--speculative_config", vllm_speculative_config])
+    if vllm_extra_args is not None:
+        vllm_cmd.extend(shlex.split(vllm_extra_args))
 
     typer.echo(f"Starting vLLM server: {' '.join(vllm_cmd)}")
     vllm_process = subprocess.Popen(vllm_cmd, stdout=sys.stdout, stderr=sys.stderr)

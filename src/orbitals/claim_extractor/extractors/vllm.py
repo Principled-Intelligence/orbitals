@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from functools import lru_cache
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import aiohttp
 import pydantic
@@ -46,6 +46,12 @@ def _strip_lone_surrogates(obj):
     return obj
 
 
+_DEFAULT_SPECULATIVE_CONFIG = {"num_speculative_tokens": 4, "method": "mtp"}
+# Sentinel for `speculative_config`: distinguishes "user did not specify, apply
+# our default" from "user explicitly passed None to disable speculative decoding".
+_USE_DEFAULT_SPECULATIVE_CONFIG: Any = object()
+
+
 @ClaimExtractor.register_extractor("vllm")
 class VLLMClaimExtractor(ClaimExtractor):
     def __init__(
@@ -58,6 +64,9 @@ class VLLMClaimExtractor(ClaimExtractor):
         max_model_len: int = 40_000,
         max_num_seqs: int = 2,
         gpu_memory_utilization: float = 0.9,
+        enable_prefix_caching: bool = True,
+        language_model_only: bool = True,
+        speculative_config: dict | None = _USE_DEFAULT_SPECULATIVE_CONFIG,
         frequency_penalty: float = 0.0,
         presence_penalty: float = 1.5,
         repetition_penalty: float = 1.0,
@@ -74,11 +83,16 @@ class VLLMClaimExtractor(ClaimExtractor):
         super().__init__(backend)
         self.model = self.maybe_map_model(model)
         self.skip_evidences = skip_evidences
+        if speculative_config is _USE_DEFAULT_SPECULATIVE_CONFIG:
+            speculative_config = dict(_DEFAULT_SPECULATIVE_CONFIG)
         self.llm = vllm.LLM(
             model=self.model,
             max_model_len=max_model_len,
             max_num_seqs=max_num_seqs,
             gpu_memory_utilization=gpu_memory_utilization,
+            enable_prefix_caching=enable_prefix_caching,
+            language_model_only=language_model_only,
+            speculative_config=speculative_config,
         )
         self.tokenizer = _get_tokenizer(self.model)
         self.sampling_params = vllm.SamplingParams(
