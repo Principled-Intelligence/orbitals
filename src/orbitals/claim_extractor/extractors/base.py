@@ -19,13 +19,9 @@ from ..modeling import (
 
 DefaultModel = Literal["claim-extractor"]
 
-# TODO: the HF repos for claim-extractor are not finalized yet. These placeholders
-# preserve the short-name -> repo indirection used by ScopeGuard; swap them with
-# the real repos once they are published.
 MODEL_MAPPING = {
-    "claim-extractor": "principled-intelligence/claim-extractor-TBD",
-    "claim-extractor-q": "principled-intelligence/claim-extractor-q-TBD",
-    "claim-extractor-g": "principled-intelligence/claim-extractor-g-TBD",
+    "claim-extractor": "principled-intelligence/claim-extractor-4B-q-2605",
+    "claim-extractor-q": "principled-intelligence/claim-extractor-4B-q-2605",
 }
 
 
