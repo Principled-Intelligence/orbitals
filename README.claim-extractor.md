@@ -13,19 +13,13 @@ Given a conversation (or a single message) and — optionally — the specificat
   * **Unverifiable** — common knowledge, subjective claims, marketing language, visual/UI references
 * **Intents** — explicit goals, requests, or actions the user wants to accomplish (extracted from user messages only)
 
-Every extraction comes with **evidences**: verbatim excerpts from the source message that support the claim or intent. Evidences can be optionally disabled for lower-latency use cases.
+`claim-extractor` is a building block for a wide range of downstream governance tasks: fact-checking, intent routing, response auditing, and hallucination detection. It is powered by `claim-extractor-q`, an open-weight 4B model fine-tuned to extract atomic, self-contained claims and intents:
 
-`claim-extractor` is a building block for a wide range of downstream governance tasks: fact-checking, intent routing, response auditing, and hallucination detection. It is powered by specialized language models fine-tuned to extract atomic, self-contained claims and intents; different models are available with different deployment options:
-
-| Model | Parameters | Hosting Options |
+| Model | Parameters | Hosting |
 | :--- | :--- | :--- |
-| claim-extractor-q | 4B | Self-hosted |
-| claim-extractor-g | 4B | Self-hosted |
-| claim-extractor-pro | ~ | Cloud-only |
+| [`claim-extractor-q`](https://huggingface.co/principled-intelligence/claim-extractor-4B-q-2605) | 4B | Self-hosted (vLLM / HuggingFace) |
 
-> The open-weight checkpoints for `claim-extractor-q` and `claim-extractor-g` will be announced shortly. Reach out at [orbitals@principled-intelligence.com](mailto:orbitals@principled-intelligence.com) for early access.
-
-## Quickstart with our open models
+## Quickstart
 
 The easiest way to get started with ClaimExtractor is to use our open models, which you can self-host on consumer-grade GPUs and use via the `vllm` or `huggingface` backends.
 
@@ -43,9 +37,8 @@ Then:
 from orbitals.claim_extractor import ClaimExtractor
 
 ce = ClaimExtractor(
-    backend="vllm",
-    model="claim-extractor-q",    # for the Qwen-family model
-    # model="claim-extractor-g",  # for the Gemma-family model
+    backend="vllm",  # or "hf" for huggingface
+    model="claim-extractor-q",
 )
 
 ai_service_description = """
@@ -64,87 +57,60 @@ result = ce.extract(
     ai_service_description=ai_service_description,
 )
 
+print("--Claims--")
 for claim in result.extractions.claims:
     print(f"[{claim.subtype}] {claim.content}")
-    for evidence in claim.evidences:
-        print(f"    evidence: {evidence}")
 
+print("--Intents--")
 for intent in result.extractions.intents:
     print(f"[Intent] {intent.content}")
+print("--End--")
 
+# --Claims--
 # [Factoid] The tracking number of the user's package is 1234567890
-#     evidence: Your package with tracking number 1234567890 is currently in transit
 # [Factoid] The user's package is expected to be delivered on December 12, 2025
-#     evidence: expected to be delivered on December 12, 2025
 # [Capability] The parcel delivery virtual assistant can notify the user when the package is out for delivery
-#     evidence: I can also notify you when it is out for delivery.
-```
-
-## Quickstart with our hosted models
-
-ClaimExtractor Pro is our most advanced model, available via API through our managed cloud hosting (get in touch with us for on-premise deployment).
-
-> Open access to the hosted models is coming soon.
-> Need access earlier? Contact us at [orbitals@principled-intelligence.com](mailto:orbitals@principled-intelligence.com).
-
-Install plain `orbitals`:
-
-```bash
-pip install orbitals
-```
-
-Then:
-
-```python
-from orbitals.claim_extractor import ClaimExtractor
-
-ce = ClaimExtractor(
-    backend="api",
-    api_key="principled_1234",  # replace with your actual API key
-)
-
-ai_service_description = """
-You are a virtual assistant for a parcel delivery service.
-You can only answer questions about package tracking.
-"""
-
-result = ce.extract(
-    "Your package is in transit and will arrive on December 12, 2025.",
-    ai_service_description=ai_service_description,
-)
-
-for claim in result.extractions.claims:
-    print(f"[{claim.subtype}] {claim.content}")
+# --Intents--
+# --End--
 ```
 
 ## Usage
 
 ### Initialization
 
-Initialize the `ClaimExtractor` object by specifying the backend and model you want to use.
-
-If you are using the self-hosted models, you can choose between the `vllm` and `huggingface` backends:
+Initialize the `ClaimExtractor` object by picking a backend — `vllm` (recommended, faster) or `hf`:
 
 ```python
 from orbitals.claim_extractor import ClaimExtractor
 
 ce = ClaimExtractor(
-    model="claim-extractor-q",        # for the Qwen-family model
-    # model="claim-extractor-g",      # for the Gemma-family model
-    backend="vllm",                   # or "huggingface"
+    backend="vllm",                   # or "hf"
+    model="claim-extractor-q",
 )
 ```
 
-If you are using the hosted models, use the `api` backend and provide your API key:
+If you've already started a `claim-extractor` server (see [Serving](#serving-claimextractor-on-premise-or-on-your-infrastructure) below), use the `api` backend instead and point it at your server's URL:
 
 ```python
 from orbitals.claim_extractor import ClaimExtractor
 
 ce = ClaimExtractor(
     backend="api",
-    api_key="principled_1234",  # replace with your actual API key
+    api_url="http://localhost:8000",
 )
 ```
+
+The `vllm` and `hf` backends accept sampling controls (`temperature`, `top_p`, `top_k`, `min_p`, `presence_penalty`, `frequency_penalty`, `repetition_penalty`) with defaults tuned for claim extraction; override them on the constructor if you need to. The matching server-side defaults are exposed via `orbitals claim-extractor serve --help`. The `api` backend does not take sampling controls — it forwards requests to a running server, which uses whatever sampling it was started with.
+
+The `vllm` backend additionally enables the following vLLM engine flags by default — `orbitals claim-extractor serve` applies the same defaults automatically:
+
+| Flag | Default | Purpose |
+| :--- | :--- | :--- |
+| `enable_prefix_caching` | `True` | Reuses KV-cache across requests that share a prompt prefix (the long system prompt is identical across every extraction). |
+| `language_model_only` | `True` | Disables all multimodal inputs (sets per-prompt limits to 0 for every modality). |
+| `speculative_config` | `{"num_speculative_tokens": 4, "method": "mtp"}` | Enables MTP speculative decoding for higher throughput. |
+
+Override them via the constructor (`ClaimExtractor(backend="vllm", enable_prefix_caching=False)`) or, on the CLI, via `--no-vllm-enable-prefix-caching` / `--no-vllm-language-model-only` to disable the boolean flags, and `--vllm-speculative-config '<json>'` to change the speculative config (pass `--vllm-speculative-config ""` to disable it). From Python, pass `speculative_config=None` to disable speculative decoding entirely.
 
 ### Extractions
 
@@ -156,18 +122,18 @@ from orbitals.claim_extractor import ClaimExtractor, Claim, Intent
 ce = ClaimExtractor(backend="vllm", model="claim-extractor-q")
 result = ce.extract(message, ai_service_description=ai_service_description)
 
-assert isinstance(result.extractions.claims[0], Claim)
-assert isinstance(result.extractions.intents[0], Intent)
+assert len(result.extractions.claims) == 0 or isinstance(result.extractions.claims[0], Claim)
+assert len(result.extractions.intents) == 0 or isinstance(result.extractions.intents[0], Intent)
 
 for claim in result.extractions.claims:
     # claim.subtype is one of: "Factoid", "Capability", "User Assertion", "Unverifiable"
-    print(claim.subtype, claim.content, claim.evidences)
+    print(claim.subtype, claim.content)
 
 for intent in result.extractions.intents:
-    print(intent.content, intent.evidences)
+    print(intent.content)
 ```
 
-Each `Claim` and `Intent` carries a decontextualized `content` string plus a list of verbatim `evidences` drawn from the source message.
+Each `Claim` and `Intent` carries a decontextualized `content` string. An `evidences` field is also present on every extraction (see [Evidences](#evidences) below), but the currently released model does not populate it — it will always be an empty list.
 
 ### Claim subtypes
 
@@ -232,6 +198,8 @@ Claims and intents are extracted **only from the last message** of the conversat
 - If the last message is from the **user**, both claims and intents may be extracted.
 - If the last message is from the **assistant**, only claims may be extracted (assistant messages never produce intents).
 
+If you need claims/intents extracted from every turn of a conversation, use the `/extract-conversation` endpoint (see [Extracting from every turn of a conversation](#extracting-from-every-turn-of-a-conversation) below).
+
 ### AI Service Description
 
 The AI service description is **optional** for ClaimExtractor — you can pass `None` (the default) when you don't have one. However, providing a description meaningfully improves extraction quality:
@@ -242,24 +210,30 @@ The AI service description is **optional** for ClaimExtractor — you can pass `
 You can provide it in two ways:
 
 1. **As a single string** — a free-form description.
-2. **As a structured object** — an `orbitals.types.AIServiceDescription` (**strongly recommended approach** for best performance).
-
-### Skipping evidences
-
-If you don't need verbatim evidences (and want to save latency and tokens), pass `skip_evidences=True` at init time or per-call:
+2. **As a structured object** — an `orbitals.types.AIServiceDescription` (**strongly recommended approach** for best performance):
 
 ```python
-ce = ClaimExtractor(
-    backend="vllm",
-    model="claim-extractor-q",
-    skip_evidences=True,
+from orbitals.types import AIServiceDescription
+
+ai_service_description = AIServiceDescription(
+    identity_role="Virtual assistant for a parcel delivery service.",
+    context="Operates on the company website; users are customers checking on shipments.",
+    knowledge_scope="Package tracking, delivery windows, redelivery options.",
+    functionalities=["Tracking lookup", "Out-for-delivery notifications"],
+    principles="Only answer questions related to package tracking.",
+    website_url="https://example.com",
 )
 
-# or, override per-call:
-result = ce.extract(message, ai_service_description=asd, skip_evidences=True)
+result = ce.extract(message, ai_service_description=ai_service_description)
 ```
 
-When evidences are skipped, each `Claim` / `Intent` still has a `content` field but its `evidences` list will be empty.
+Only `identity_role` and `context` are required; every other field is optional.
+
+### Evidences
+
+In addition to a decontextualized `content` string, every `Claim` and `Intent` is designed to carry a list of `evidences` — verbatim excerpts from the source message that support the extraction.
+
+> **Note**: the currently released `claim-extractor-q` model does **not** extract evidences — every `evidences` list will be empty. Evidence extraction is on the roadmap and will ship with a future model release. The `skip_evidences` flag on `ClaimExtractor` and the matching `--skip-evidences` serve flag are reserved for that future release; today they have no effect.
 
 ### Batch Processing
 
@@ -306,7 +280,10 @@ All of this is configured via the `orbitals claim-extractor serve` command:
 # install the necessary packages
 pip install orbitals[claim-extractor-serve]
 
-# start everything
+# start everything (defaults to "claim-extractor", which aliases to claim-extractor-q)
+orbitals claim-extractor serve --port 8000
+
+# or pin a specific model
 orbitals claim-extractor serve claim-extractor-q --port 8000
 ```
 
@@ -337,12 +314,12 @@ Response:
             {
                 "subtype": "Factoid",
                 "content": "The user's package is currently in transit",
-                "evidences": ["Your package is in transit"]
+                "evidences": []
             },
             {
                 "subtype": "Factoid",
                 "content": "The user's package is expected to arrive on December 12, 2025",
-                "evidences": ["will arrive on December 12, 2025."]
+                "evidences": []
             }
         ]
     },
@@ -351,6 +328,40 @@ Response:
     "usage": { "prompt_tokens": 1234, "completion_tokens": 120, "total_tokens": 1354 }
 }
 ```
+
+##### Extracting from every turn of a conversation
+
+If you want claims/intents extracted from *every* message in a conversation (not just the last), use the `/extract-conversation` endpoint:
+
+```bash
+curl -X 'POST' \
+    'http://localhost:8000/orbitals/claim-extractor/extract-conversation' \
+    -H 'accept: application/json' \
+    -H 'Content-Type: application/json' \
+    -d '{
+        "conversation": [
+            {"role": "user", "content": "I ordered a package, tracking number 1234567890."},
+            {"role": "assistant", "content": "Your package is in transit and will arrive on December 12, 2025."}
+        ],
+        "ai_service_description": "You are a virtual assistant for a parcel delivery service."
+    }'
+```
+
+Response:
+
+```json
+{
+    "extractions": [
+        { "intents": [/* ... */], "claims": [/* ... */] },
+        { "intents": [],          "claims": [/* ... */] }
+    ],
+    "time_taken": 0.91,
+    "model": "<model>",
+    "usage": { "prompt_tokens": 2468, "completion_tokens": 240, "total_tokens": 2708 }
+}
+```
+
+Unlike `/extract`, the `extractions` field is a **list** with one entry per message in the conversation, in order. Each entry contains the claims and intents extracted from the corresponding turn (using all prior turns as context).
 
 #### 2. Python SDK
 
