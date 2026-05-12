@@ -64,11 +64,9 @@ class ClaimExtractorPipeline(Pipeline):
         self,
         **kwargs,
     ):
-        preprocess_kwargs = {}
-        if "skip_evidences" in kwargs or self.skip_evidences:
-            preprocess_kwargs["skip_evidences"] = kwargs.get(
-                "skip_evidences", self.skip_evidences
-            )
+        preprocess_kwargs = {
+            "skip_evidences": kwargs.get("skip_evidences", self.skip_evidences)
+        }
 
         return (
             preprocess_kwargs,

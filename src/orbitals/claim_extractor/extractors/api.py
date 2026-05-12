@@ -82,7 +82,7 @@ def _maybe_get_api_key(
 
     if custom_headers is not None and "X-API-Key" in custom_headers:
         logging.debug("Using API key from custom headers")
-        return custom_headers.pop("X-API-Key")
+        return custom_headers["X-API-Key"]
 
     api_key = os.environ.get("PRINCIPLED_API_KEY")
     if api_key is not None:
@@ -107,7 +107,7 @@ class APIClaimExtractor(ClaimExtractor):
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
         self.skip_evidences = skip_evidences
-        self.custom_headers = custom_headers if custom_headers is not None else {}
+        self.custom_headers = dict(custom_headers) if custom_headers is not None else {}
         if self.api_key is not None:
             self.custom_headers["X-API-Key"] = self.api_key
 
@@ -181,7 +181,7 @@ class APIClaimExtractor(ClaimExtractor):
 class AsyncAPIClaimExtractor(AsyncClaimExtractor):
     def __init__(
         self,
-        backend: Literal["api", "async-api"] = "api",
+        backend: Literal["api"] = "api",
         model: DefaultModel | str = "claim-extractor",
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
@@ -193,7 +193,7 @@ class AsyncAPIClaimExtractor(AsyncClaimExtractor):
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
         self.skip_evidences = skip_evidences
-        self.custom_headers = custom_headers if custom_headers is not None else {}
+        self.custom_headers = dict(custom_headers) if custom_headers is not None else {}
         if self.api_key is not None:
             self.custom_headers["X-API-Key"] = self.api_key
 

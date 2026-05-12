@@ -29,9 +29,24 @@ RESPONSE="$(curl -fsS -X POST "$URL" \
 
 echo "$RESPONSE"
 assert_contains "$RESPONSE" '"extractions"' "response missing extractions"
-assert_contains "$RESPONSE" '['             "extractions field should be a JSON array (one entry per turn)"
 assert_contains "$RESPONSE" '"claims"'      "response missing claims"
 assert_contains "$RESPONSE" '"intents"'     "response missing intents"
 assert_contains "$RESPONSE" '"model"'       "response missing model"
 assert_contains "$RESPONSE" '"time_taken"'  "response missing time_taken"
+
+RESPONSE_JSON="$RESPONSE" uv run python - <<'PY'
+import json
+import os
+
+body = json.loads(os.environ["RESPONSE_JSON"])
+extractions = body.get("extractions")
+
+assert isinstance(extractions, list), "extractions must be a JSON array"
+assert len(extractions) == 2, "expected one extractions object per conversation turn"
+assert all(isinstance(item, dict) for item in extractions), "each extraction must be an object"
+assert all("claims" in item and "intents" in item for item in extractions), (
+    "each extraction must contain claims and intents"
+)
+PY
+
 log_pass "cURL POST /orbitals/claim-extractor/extract-conversation matches README contract"

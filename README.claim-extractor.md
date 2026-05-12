@@ -21,14 +21,14 @@ Given a conversation (or a single message) and — optionally — the specificat
 
 ## Quickstart
 
-The easiest way to get started with ClaimExtractor is to use our open models, which you can self-host on consumer-grade GPUs and use via the `vllm` or `huggingface` backends.
+The easiest way to get started with ClaimExtractor is to use our open models, which you can self-host on consumer-grade GPUs and use via the `vllm` or `hf` backends.
 
 First, install `orbitals` and `claim-extractor`:
 
 ```bash
-pip install orbitals[claim-extractor-vllm]
+uv add 'orbitals[claim-extractor-vllm]'
 # or if you prefer to use HuggingFace pipelines for inference instead of vLLM
-# pip install orbitals[claim-extractor-hf]
+# uv add 'orbitals[claim-extractor-hf]'
 ```
 
 Then:
@@ -120,6 +120,9 @@ Override them via the constructor (`ClaimExtractor(backend="vllm", enable_prefix
 from orbitals.claim_extractor import ClaimExtractor, Claim, Intent
 
 ce = ClaimExtractor(backend="vllm", model="claim-extractor-q")
+message = "Your package is in transit and will arrive on December 12, 2025."
+ai_service_description = "You are a virtual assistant for a parcel delivery service."
+
 result = ce.extract(message, ai_service_description=ai_service_description)
 
 assert len(result.extractions.claims) == 0 or isinstance(result.extractions.claims[0], Claim)
@@ -215,6 +218,7 @@ You can provide it in two ways:
 ```python
 from orbitals.types import AIServiceDescription
 
+message = "Your package is in transit and will arrive on December 12, 2025."
 ai_service_description = AIServiceDescription(
     identity_role="Virtual assistant for a parcel delivery service.",
     context="Operates on the company website; users are customers checking on shipments.",
@@ -278,7 +282,7 @@ All of this is configured via the `orbitals claim-extractor serve` command:
 
 ```bash
 # install the necessary packages
-pip install orbitals[claim-extractor-serve]
+uv add 'orbitals[claim-extractor-serve]'
 
 # start everything (defaults to "claim-extractor", which aliases to claim-extractor-q)
 orbitals claim-extractor serve --port 8000
@@ -403,7 +407,7 @@ result = await ce.extract(
 
 ### vLLM is using too much GPU memory
 
-If `claim-extractor` with the `vllm` backend (or `claim-extractor serve`) is consuming too much GPU memory, you can reduce the `gpu_memory_utilization` parameter in `VLLMClaimExtractor` (or set the `--vllm-gpu-memory-utilization` flag for `orbitals claim-extractor serve`). The default is 0.9 (90%), but you can lower it to free up GPU resources for other tasks.
+If `claim-extractor` with the `vllm` backend (or `claim-extractor serve`) is consuming too much GPU memory, you can reduce the `gpu_memory_utilization` parameter with `ClaimExtractor(backend="vllm", gpu_memory_utilization=...)` (or set the `--vllm-gpu-memory-utilization` flag for `orbitals claim-extractor serve`). The default is 0.9 (90%), but you can lower it to free up GPU resources for other tasks.
 
 ### Getting Out of Memory (OOM) errors with vLLM
 

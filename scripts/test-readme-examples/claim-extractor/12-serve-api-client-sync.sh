@@ -8,7 +8,7 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 require_uv
-require_extras serving || true
+require_extras claim-extractor-serve || true
 require_gpu || true
 
 trap_stop_server

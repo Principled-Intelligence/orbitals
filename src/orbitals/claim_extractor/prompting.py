@@ -497,7 +497,7 @@ def convert_to_conversation(messages: str | list[dict[str, str]]) -> Conversatio
 
     conversation = Conversation(
         messages=[
-            ConversationMessage(role=message["role"], content=message["content"])
+            ConversationMessage.model_validate(message)
             for message in messages
         ]
     )

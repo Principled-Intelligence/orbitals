@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -52,7 +53,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Adjust this in production
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -70,6 +71,15 @@ class ConversationClaimExtractorResponse(BaseModel):
     model: str
     usage: LLMUsage
     time_taken: float
+
+
+def _require_usage(usage: LLMUsage | None) -> LLMUsage:
+    if usage is None:
+        raise HTTPException(
+            status_code=500,
+            detail="ClaimExtractor serving expected usage information from the backend",
+        )
+    return usage
 
 
 @app.get("/health")
@@ -100,7 +110,7 @@ async def extract(
     return ClaimExtractorResponse(
         extractions=result.extractions,
         model=result.model,
-        usage=result.usage,  # type: ignore[invalid-argument-type]
+        usage=_require_usage(result.usage),
         time_taken=end_time - start_time,
     )
 
@@ -118,25 +128,51 @@ async def batch_extract(
 ) -> list[ClaimExtractorResponse]:
     global claim_extractor
 
-    start_time = time.time()
-    results = await claim_extractor.batch_extract(
-        conversations,
-        ai_service_description=ai_service_description,
-        ai_service_descriptions=ai_service_descriptions,
-        skip_evidences=skip_evidences,
-        model=model,
-    )
-    end_time = time.time()
+    if ai_service_description is not None and ai_service_descriptions is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Only one between ai_service_description and ai_service_descriptions must be provided",
+        )
 
-    return [
-        ClaimExtractorResponse(
+    if ai_service_descriptions is not None and len(conversations) != len(
+        ai_service_descriptions
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="The number of conversations and ai_service_descriptions must be the same",
+        )
+
+    descriptions: list[str | AIServiceDescription | None]
+    if ai_service_descriptions is not None:
+        descriptions = list(ai_service_descriptions)
+    else:
+        descriptions = [ai_service_description] * len(conversations)
+
+    async def _timed_extract(
+        conversation: ClaimExtractorInput,
+        description: str | AIServiceDescription | None,
+    ) -> ClaimExtractorResponse:
+        start_time = time.time()
+        result = await claim_extractor.extract(
+            conversation,
+            ai_service_description=description,
+            skip_evidences=skip_evidences,
+            model=model,
+        )
+        end_time = time.time()
+        return ClaimExtractorResponse(
             extractions=result.extractions,
             model=result.model,
-            usage=result.usage,  # type: ignore[invalid-argument-type]
+            usage=_require_usage(result.usage),
             time_taken=end_time - start_time,
         )
-        for result in results
-    ]
+
+    return await asyncio.gather(
+        *[
+            _timed_extract(conversation, description)
+            for conversation, description in zip(conversations, descriptions)
+        ]
+    )
 
 
 @app.post(
@@ -176,10 +212,11 @@ async def extract_conversation(
     )
     end_time = time.time()
 
+    usages = [_require_usage(r.usage) for r in results]
     total_usage = LLMUsage(
-        prompt_tokens=sum(r.usage.prompt_tokens for r in results),
-        completion_tokens=sum(r.usage.completion_tokens for r in results),
-        total_tokens=sum(r.usage.total_tokens for r in results),
+        prompt_tokens=sum(usage.prompt_tokens for usage in usages),
+        completion_tokens=sum(usage.completion_tokens for usage in usages),
+        total_tokens=sum(usage.total_tokens for usage in usages),
     )
 
     return ConversationClaimExtractorResponse(

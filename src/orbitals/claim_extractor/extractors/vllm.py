@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
 import aiohttp
 import pydantic
@@ -49,7 +49,11 @@ def _strip_lone_surrogates(obj):
 _DEFAULT_SPECULATIVE_CONFIG = {"num_speculative_tokens": 4, "method": "mtp"}
 # Sentinel for `speculative_config`: distinguishes "user did not specify, apply
 # our default" from "user explicitly passed None to disable speculative decoding".
-_USE_DEFAULT_SPECULATIVE_CONFIG: Any = object()
+class _UseDefaultSpeculativeConfig:
+    pass
+
+
+_USE_DEFAULT_SPECULATIVE_CONFIG: Final = _UseDefaultSpeculativeConfig()
 
 
 @ClaimExtractor.register_extractor("vllm")
@@ -66,7 +70,9 @@ class VLLMClaimExtractor(ClaimExtractor):
         gpu_memory_utilization: float = 0.9,
         enable_prefix_caching: bool = True,
         language_model_only: bool = True,
-        speculative_config: dict | None = _USE_DEFAULT_SPECULATIVE_CONFIG,
+        speculative_config: dict
+        | None
+        | _UseDefaultSpeculativeConfig = _USE_DEFAULT_SPECULATIVE_CONFIG,
         frequency_penalty: float = 0.0,
         presence_penalty: float = 1.5,
         repetition_penalty: float = 1.0,
@@ -181,7 +187,7 @@ class VLLMClaimExtractor(ClaimExtractor):
 class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
     def __init__(
         self,
-        backend: Literal["vllm-api", "vllm-async-api"] = "vllm-api",
+        backend: Literal["vllm-api"] = "vllm-api",
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = True,
         vllm_serving_url: str = "http://localhost:8000",
