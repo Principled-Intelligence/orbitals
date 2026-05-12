@@ -18,9 +18,9 @@ from ..modeling import (
     ClaimExtractorOutput,
 )
 from ..prompting import (
-    SYSTEM_PROMPT_ICE_EXTRACTION,
-    ExtractionsResponseModel,
     build_prompt,
+    get_system_prompt,
+    validate_extractions_response,
 )
 from .base import AsyncClaimExtractor, ClaimExtractor, DefaultModel
 
@@ -32,18 +32,38 @@ def _get_tokenizer(model_name: str) -> transformers.PreTrainedTokenizer:
     return transformers.AutoTokenizer.from_pretrained(model_name)
 
 
+def _strip_lone_surrogates(obj):
+    # Structured decoding occasionally emits unpaired \uXXXX escapes (typically
+    # half of an emoji pair). json.loads accepts them into str, but pydantic_core
+    # / serde_json refuse to encode lone surrogates as UTF-8 — replace them with
+    # U+FFFD so downstream serialization works.
+    if isinstance(obj, str):
+        return obj.encode("utf-8", "replace").decode("utf-8")
+    if isinstance(obj, dict):
+        return {k: _strip_lone_surrogates(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_lone_surrogates(x) for x in obj]
+    return obj
+
+
 @ClaimExtractor.register_extractor("vllm")
 class VLLMClaimExtractor(ClaimExtractor):
     def __init__(
         self,
         backend: Literal["vllm"] = "vllm",
         model: DefaultModel | str = "claim-extractor",
-        skip_evidences: bool = False,
-        temperature: float = 0.0,
+        skip_evidences: bool = True,
+        temperature: float = 0.7,
         max_tokens: int = 20_000,
         max_model_len: int = 40_000,
         max_num_seqs: int = 2,
         gpu_memory_utilization: float = 0.9,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 1.5,
+        repetition_penalty: float = 1.0,
+        top_p: float = 0.8,
+        top_k: int = 20,
+        min_p: float = 0.0,
     ):
         from ...utils import maybe_configure_gpu_usage
 
@@ -64,6 +84,12 @@ class VLLMClaimExtractor(ClaimExtractor):
         self.sampling_params = vllm.SamplingParams(
             temperature=temperature,
             max_tokens=max_tokens,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            repetition_penalty=repetition_penalty,
+            top_p=top_p,
+            top_k=top_k,
+            min_p=min_p,
         )
 
     def _extract(
@@ -118,10 +144,13 @@ class VLLMClaimExtractor(ClaimExtractor):
             text = output.outputs[0].text
 
             # TODO generation errors: handle potentially invalid JSON (retry?)
-            parsed_obj = json.loads(text)
+            parsed_obj = _strip_lone_surrogates(json.loads(text))
 
             # TODO generation errors: handle model validation failure (retry?)
-            validated_obj = ExtractionsResponseModel.model_validate(parsed_obj)
+            validated_obj = validate_extractions_response(
+                parsed_obj,
+                skip_evidences=resolved_skip_evidences,
+            )
 
             results.append(
                 ClaimExtractorOutput(
@@ -140,10 +169,16 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         self,
         backend: Literal["vllm-api", "vllm-async-api"] = "vllm-api",
         model: DefaultModel | str = "claim-extractor",
-        skip_evidences: bool = False,
+        skip_evidences: bool = True,
         vllm_serving_url: str = "http://localhost:8000",
-        temperature: float = 0.3,
+        temperature: float = 0.7,
         max_tokens: int = 20_000,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 1.5,
+        repetition_penalty: float = 1.0,
+        top_p: float = 0.8,
+        top_k: int = 20,
+        min_p: float = 0.0,
         chat_templating_tokenizer: str | None = None,
         count_system_prompt_in_usage: bool = False,
     ):
@@ -158,6 +193,12 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         self.vllm_serving_url = vllm_serving_url
         self.vllm_temperature = temperature
         self.vllm_max_tokens = max_tokens
+        self.vllm_frequency_penalty = frequency_penalty
+        self.vllm_presence_penalty = presence_penalty
+        self.vllm_repetition_penalty = repetition_penalty
+        self.vllm_top_p = top_p
+        self.vllm_top_k = top_k
+        self.vllm_min_p = min_p
         self.count_system_prompt_in_usage = count_system_prompt_in_usage
 
     async def _handle_request(
@@ -201,11 +242,12 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
                     "prompt": prompt,
                     "temperature": self.vllm_temperature,
                     "max_tokens": self.vllm_max_tokens,
-                    "repetition_penalty": 1.2,
-                    "no_repeat_ngram_size": 4,
-                    "structured_outputs": {
-                        "json": ExtractionsResponseModel.model_json_schema()
-                    },
+                    "frequency_penalty": self.vllm_frequency_penalty,
+                    "presence_penalty": self.vllm_presence_penalty,
+                    "repetition_penalty": self.vllm_repetition_penalty,
+                    "top_p": self.vllm_top_p,
+                    "top_k": self.vllm_top_k,
+                    "min_p": self.vllm_min_p,
                 },
                 headers={"Content-Type": "application/json"},
             ) as response:
@@ -214,19 +256,22 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
                 response_text = response_json["choices"][0]["text"]
 
         try:
-            parsed_obj = json.loads(response_text)
+            parsed_obj = _strip_lone_surrogates(json.loads(response_text))
         except json.JSONDecodeError:
             raise ValueError(f"Failed to parse generated text: {response_json}")
 
         try:
-            validated_obj = ExtractionsResponseModel.model_validate(parsed_obj)
+            validated_obj = validate_extractions_response(
+                parsed_obj,
+                skip_evidences=resolved_skip_evidences,
+            )
         except pydantic.ValidationError as e:
             raise ValueError(f"Failed to validate generated text: {e}")
 
         system_prompt_tokens = (
             0
             if self.count_system_prompt_in_usage
-            else len(tokenizer.encode(SYSTEM_PROMPT_ICE_EXTRACTION))
+            else len(tokenizer.encode(get_system_prompt(resolved_skip_evidences)))
         )
 
         return ClaimExtractorOutput(

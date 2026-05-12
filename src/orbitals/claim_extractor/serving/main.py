@@ -25,8 +25,21 @@ async def lifespan(app: FastAPI):
     claim_extractor = AsyncClaimExtractor(  # type: ignore[invalid-assignment]
         backend="vllm-api",
         model=os.environ["CLAIM_EXTRACTOR_VLLM_MODEL"],
-        skip_evidences=os.environ.get("CLAIM_EXTRACTOR_SKIP_EVIDENCES", "0") == "1",
+        skip_evidences=os.environ.get("CLAIM_EXTRACTOR_SKIP_EVIDENCES", "1") == "1",
         vllm_serving_url=os.environ["CLAIM_EXTRACTOR_VLLM_SERVING_URL"],
+        temperature=float(os.environ.get("CLAIM_EXTRACTOR_TEMPERATURE", "0.7")),
+        frequency_penalty=float(
+            os.environ.get("CLAIM_EXTRACTOR_FREQUENCY_PENALTY", "0.0")
+        ),
+        presence_penalty=float(
+            os.environ.get("CLAIM_EXTRACTOR_PRESENCE_PENALTY", "1.5")
+        ),
+        repetition_penalty=float(
+            os.environ.get("CLAIM_EXTRACTOR_REPETITION_PENALTY", "1.0")
+        ),
+        top_p=float(os.environ.get("CLAIM_EXTRACTOR_TOP_P", "0.8")),
+        top_k=int(os.environ.get("CLAIM_EXTRACTOR_TOP_K", "20")),
+        min_p=float(os.environ.get("CLAIM_EXTRACTOR_MIN_P", "0.0")),
     )
 
     yield
@@ -57,6 +70,11 @@ class ConversationClaimExtractorResponse(BaseModel):
     model: str
     usage: LLMUsage
     time_taken: float
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 @app.post("/orbitals/claim-extractor/extract", response_model=ClaimExtractorResponse)

@@ -139,9 +139,16 @@ class ClaimExtractor(BaseClaimExtractor):
         cls,
         backend: Literal["hf"] = "hf",
         model: DefaultModel | str = "claim-extractor",
-        skip_evidences: bool = False,
+        skip_evidences: bool = True,
         max_new_tokens: int = 20_000,
         do_sample: bool = False,
+        temperature: float = 0.7,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 1.5,
+        repetition_penalty: float = 1.0,
+        top_p: float = 0.8,
+        top_k: int = 20,
+        min_p: float = 0.0,
         **kwargs,
     ) -> HuggingFaceClaimExtractor: ...
 
@@ -150,12 +157,18 @@ class ClaimExtractor(BaseClaimExtractor):
         cls,
         backend: Literal["vllm"],
         model: DefaultModel | str = "claim-extractor",
-        skip_evidences: bool = False,
-        temperature: float = 0.0,
+        skip_evidences: bool = True,
+        temperature: float = 0.7,
         max_tokens: int = 20_000,
         max_model_len: int = 40_000,
         max_num_seqs: int = 2,
         gpu_memory_utilization: float = 0.9,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 1.5,
+        repetition_penalty: float = 1.0,
+        top_p: float = 0.8,
+        top_k: int = 20,
+        min_p: float = 0.0,
     ) -> VLLMClaimExtractor: ...
 
     @overload
@@ -165,7 +178,7 @@ class ClaimExtractor(BaseClaimExtractor):
         model: DefaultModel | str = "claim-extractor",
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
-        skip_evidences: bool = False,
+        skip_evidences: bool = True,
         custom_headers: dict[str, str] | None = None,
     ) -> APIClaimExtractor: ...
 
@@ -241,10 +254,16 @@ class AsyncClaimExtractor(BaseClaimExtractor):
         cls,
         backend: Literal["vllm-api"],
         model: DefaultModel | str = "claim-extractor",
-        skip_evidences: bool = False,
+        skip_evidences: bool = True,
         vllm_serving_url: str = "http://localhost:8000",
-        temperature: float = 0.0,
+        temperature: float = 0.7,
         max_tokens: int = 20_000,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 1.5,
+        repetition_penalty: float = 1.0,
+        top_p: float = 0.8,
+        top_k: int = 20,
+        min_p: float = 0.0,
         chat_templating_tokenizer: str | None = None,
         count_system_prompt_in_usage: bool = False,
     ) -> AsyncVLLMApiClaimExtractor: ...
@@ -256,7 +275,7 @@ class AsyncClaimExtractor(BaseClaimExtractor):
         model: DefaultModel | str = "claim-extractor",
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
-        skip_evidences: bool = False,
+        skip_evidences: bool = True,
         custom_headers: dict[str, str] | None = None,
     ) -> AsyncAPIClaimExtractor: ...
 

@@ -18,9 +18,16 @@ class ClaimExtractorPipeline(Pipeline):
         self,
         model,
         tokenizer=None,
-        skip_evidences: bool = False,
+        skip_evidences: bool = True,
         max_new_tokens: int = 20_000,
         do_sample: bool = False,
+        temperature: float = 0.7,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 1.5,
+        repetition_penalty: float = 1.0,
+        top_p: float = 0.8,
+        top_k: int = 20,
+        min_p: float = 0.0,
         **kwargs,
     ):
         if tokenizer is None and isinstance(model, str):
@@ -43,6 +50,13 @@ class ClaimExtractorPipeline(Pipeline):
         self.skip_evidences = skip_evidences
         self.max_new_tokens = max_new_tokens
         self.do_sample = do_sample
+        self.temperature = temperature
+        self.frequency_penalty = frequency_penalty
+        self.presence_penalty = presence_penalty
+        self.repetition_penalty = repetition_penalty
+        self.top_p = top_p
+        self.top_k = top_k
+        self.min_p = min_p
 
         super().__init__(model, tokenizer, **kwargs)
 
@@ -68,7 +82,7 @@ class ClaimExtractorPipeline(Pipeline):
             orbitals.claim_extractor.modeling.ClaimExtractorInput,
             str | orbitals.types.AIServiceDescription | None,
         ],
-        skip_evidences: bool = False,
+        skip_evidences: bool = True,
     ):
         conversation, ai_service_description = inputs
 
@@ -100,6 +114,13 @@ class ClaimExtractorPipeline(Pipeline):
                 **tokenized,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=self.do_sample,
+                temperature=self.temperature,
+                frequency_penalty=self.frequency_penalty,
+                presence_penalty=self.presence_penalty,
+                repetition_penalty=self.repetition_penalty,
+                top_p=self.top_p,
+                top_k=self.top_k,
+                min_p=self.min_p,
             )
         return {
             "output_ids": outputs,

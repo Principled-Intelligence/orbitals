@@ -99,7 +99,7 @@ class APIClaimExtractor(ClaimExtractor):
         model: DefaultModel | str = "claim-extractor",
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
-        skip_evidences: bool = False,
+        skip_evidences: bool = True,
         custom_headers: dict[str, str] | None = None,
     ):
         super().__init__(backend)
@@ -185,7 +185,7 @@ class AsyncAPIClaimExtractor(AsyncClaimExtractor):
         model: DefaultModel | str = "claim-extractor",
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
-        skip_evidences: bool = False,
+        skip_evidences: bool = True,
         custom_headers: dict[str, str] | None = None,
     ):
         super().__init__(backend)

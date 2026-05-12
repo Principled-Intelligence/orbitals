@@ -7,6 +7,8 @@ from ..types import ConversationMessage, LLMUsage
 
 ExtractionSubType = Literal["Factoid", "Capability", "User Assertion", "Unverifiable"]
 
+EvidenceStr = Annotated[str, Field(max_length=500)]
+
 
 class Claim(BaseModel):
     subtype: ExtractionSubType
@@ -14,8 +16,9 @@ class Claim(BaseModel):
         ...,
         description="A self-contained, decontextualized formulation of the extracted claim",
     )
-    evidences: list[str] = Field(
+    evidences: list[EvidenceStr] = Field(
         default_factory=list,
+        max_length=5,
         description="Verbatim excerpts from the conversation messages that support the extracted claim",
     )
 
@@ -25,15 +28,16 @@ class Intent(BaseModel):
         ...,
         description="A self-contained, decontextualized formulation of the extracted intent",
     )
-    evidences: list[str] = Field(
+    evidences: list[EvidenceStr] = Field(
         default_factory=list,
+        max_length=5,
         description="Verbatim excerpts from the conversation messages that support the extracted intent",
     )
 
 
 class Extractions(BaseModel):
-    intents: list[Intent] = Field(default_factory=list)
-    claims: list[Claim] = Field(default_factory=list)
+    intents: list[Intent] = Field(default_factory=list, max_length=100)
+    claims: list[Claim] = Field(default_factory=list, max_length=200)
 
 
 def _parse_raw_output(raw_output: str) -> Extractions:

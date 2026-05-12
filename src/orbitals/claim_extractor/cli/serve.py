@@ -30,7 +30,7 @@ def setup_fastapi_logging():
 @app.command("serve")
 def serve(
     vllm_model: str = typer.Argument(..., help="The model used for vLLM serving"),
-    skip_evidences: bool = typer.Option(False, help="Whether to skip evidences"),
+    skip_evidences: bool = typer.Option(True, help="Whether to skip evidences"),
     port: int = typer.Option(
         8000, "-p", "--port", help="The port to use for the server"
     ),
@@ -50,12 +50,41 @@ def serve(
     vllm_extra_args: str | None = typer.Option(
         None, help="Extra arguments to pass to the vLLM server"
     ),
+    temperature: float = typer.Option(
+        0.7, help="Sampling temperature for vLLM (0.0 = greedy)"
+    ),
+    frequency_penalty: float = typer.Option(
+        0.0, help="frequency_penalty for vLLM sampling (additive logit penalty)"
+    ),
+    presence_penalty: float = typer.Option(
+        1.5, help="presence_penalty for vLLM sampling (additive logit penalty)"
+    ),
+    repetition_penalty: float = typer.Option(
+        1.0,
+        help="repetition_penalty for vLLM sampling (multiplicative; 1.0 = off)",
+    ),
+    top_p: float = typer.Option(
+        0.8, help="top_p (nucleus) sampling for vLLM (1.0 = off)"
+    ),
+    top_k: int = typer.Option(
+        20, help="top_k sampling for vLLM (-1 = off)"
+    ),
+    min_p: float = typer.Option(
+        0.0, help="min_p sampling for vLLM (0.0 = off)"
+    ),
 ):
     vllm_model = ClaimExtractor.maybe_map_model(vllm_model)
 
     os.environ["CLAIM_EXTRACTOR_VLLM_MODEL"] = vllm_model
     os.environ["CLAIM_EXTRACTOR_VLLM_SERVING_URL"] = f"http://localhost:{vllm_port}"
     os.environ["CLAIM_EXTRACTOR_SKIP_EVIDENCES"] = str(1) if skip_evidences else str(0)
+    os.environ["CLAIM_EXTRACTOR_TEMPERATURE"] = str(temperature)
+    os.environ["CLAIM_EXTRACTOR_FREQUENCY_PENALTY"] = str(frequency_penalty)
+    os.environ["CLAIM_EXTRACTOR_PRESENCE_PENALTY"] = str(presence_penalty)
+    os.environ["CLAIM_EXTRACTOR_REPETITION_PENALTY"] = str(repetition_penalty)
+    os.environ["CLAIM_EXTRACTOR_TOP_P"] = str(top_p)
+    os.environ["CLAIM_EXTRACTOR_TOP_K"] = str(top_k)
+    os.environ["CLAIM_EXTRACTOR_MIN_P"] = str(min_p)
 
     # Set up vLLM logging configuration
     vllm_logging_config = (

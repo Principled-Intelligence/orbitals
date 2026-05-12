@@ -18,9 +18,16 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         self,
         backend: Literal["hf"] = "hf",
         model: DefaultModel | str = "claim-extractor",
-        skip_evidences: bool = False,
+        skip_evidences: bool = True,
         max_new_tokens: int = 20_000,
         do_sample: bool = False,
+        temperature: float = 0.7,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 1.5,
+        repetition_penalty: float = 1.0,
+        top_p: float = 0.8,
+        top_k: int = 20,
+        min_p: float = 0.0,
         **kwargs,
     ):
         from ...utils import maybe_configure_gpu_usage
@@ -39,6 +46,13 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
             skip_evidences=skip_evidences,
             max_new_tokens=max_new_tokens,
             do_sample=do_sample,
+            temperature=temperature,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            repetition_penalty=repetition_penalty,
+            top_p=top_p,
+            top_k=top_k,
+            min_p=min_p,
             **kwargs,
         )  # type: ignore # ty: ignore[no-matching-overload]
 
