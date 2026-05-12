@@ -40,7 +40,7 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         self.model = self.maybe_map_model(model)
         self.skip_evidences = skip_evidences
         self._pipeline = pipeline(
-            task="claim-extractor",
+            task="claim-extraction",
             model=self.model,
             trust_remote_code=True,
             skip_evidences=skip_evidences,

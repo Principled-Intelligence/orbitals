@@ -137,7 +137,7 @@ class _NullContext:
 def test_claim_extractor_pipeline_forwards_false_constructor_default(monkeypatch):
     _install_fake_pipeline_modules(monkeypatch)
     module = importlib.reload(importlib.import_module("hf_pipeline.claim_extractor"))
-    pipeline = module.ClaimExtractorPipeline(
+    pipeline = module.ClaimExtractionPipeline(
         model=object(),
         tokenizer=types.SimpleNamespace(pad_token="</s>"),
         skip_evidences=False,
@@ -151,7 +151,7 @@ def test_claim_extractor_pipeline_forwards_false_constructor_default(monkeypatch
 def test_claim_extractor_pipeline_allows_per_call_skip_evidences_override(monkeypatch):
     _install_fake_pipeline_modules(monkeypatch)
     module = importlib.reload(importlib.import_module("hf_pipeline.claim_extractor"))
-    pipeline = module.ClaimExtractorPipeline(
+    pipeline = module.ClaimExtractionPipeline(
         model=object(),
         tokenizer=types.SimpleNamespace(pad_token="</s>"),
         skip_evidences=True,
