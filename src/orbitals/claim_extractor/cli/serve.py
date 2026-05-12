@@ -29,7 +29,9 @@ def setup_fastapi_logging():
 
 @app.command("serve")
 def serve(
-    vllm_model: str = typer.Argument(..., help="The model used for vLLM serving"),
+    vllm_model: str = typer.Argument(
+        "claim-extractor", help="The model used for vLLM serving"
+    ),
     skip_evidences: bool = typer.Option(True, help="Whether to skip evidences"),
     port: int = typer.Option(
         8000, "-p", "--port", help="The port to use for the server"
