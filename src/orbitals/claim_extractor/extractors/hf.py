@@ -20,7 +20,7 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = True,
         max_new_tokens: int = 20_000,
-        do_sample: bool = False,
+        do_sample: bool = True,
         temperature: float = 0.7,
         frequency_penalty: float = 0.0,
         presence_penalty: float = 1.5,
