@@ -26,7 +26,13 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 
-dependencies = ["pydantic>=2.0.0", "typer>=0.12.3", "requests", "aiohttp"]
+dependencies = [
+    "pydantic>=2.0.0",
+    "typer>=0.12.3",
+    "requests",
+    "aiohttp",
+    "loguru>=0.7.3",
+]
 
 [project.optional-dependencies]
 serving = ["uvicorn>=0.29.0", "fastapi[standard]>=0.119.1"]
@@ -47,8 +53,29 @@ scope-guard-all = [
     "orbitals[scope-guard-hf]",
     "orbitals[scope-guard-serve]",
 ]
+claim-extractor-hf = [
+    "transformers>=5.5.0,<6.0.0",
+    "accelerate>=1.11.0",
+    "nvidia-ml-py",
+]
+claim-extractor-vllm = [
+    "transformers>=5.5.0,<6.0.0",
+    "vllm>=0.19.1",
+    "xgrammar",
+    "nvidia-ml-py",
+]
+claim-extractor-serve = [
+    "orbitals[claim-extractor-vllm]",
+    "orbitals[serving]",
+    "httpx",
+]
+claim-extractor-all = [
+    "orbitals[claim-extractor-vllm]",
+    "orbitals[claim-extractor-hf]",
+    "orbitals[claim-extractor-serve]",
+]
 
-all = ["orbitals[scope-guard-all]"]
+all = ["orbitals[scope-guard-all]", "orbitals[claim-extractor-all]"]
 
 [project.scripts]
 orbitals = "orbitals.cli.main:app"

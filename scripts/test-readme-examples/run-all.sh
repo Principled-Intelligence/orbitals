@@ -1,105 +1,60 @@
 #!/usr/bin/env bash
-# Run every README example test in sequence.
+# Top-level driver: runs every README-example suite in sequence.
 #
 # Tips:
-#   - Set SKIP_INSTALL=1 to skip 00-install-all.sh
-#   - Set SKIP_HF=1 to skip the (slow) hf backend examples (01, 09)
-#   - Set SKIP_VLLM=1 to skip the vllm backend examples (02-08)
-#   - Set SKIP_SERVE=1 to skip the served examples (10-13)
+#   - Set SKIP_SCOPE_GUARD=1 to skip the scope-guard suite
+#   - Set SKIP_CLAIM_EXTRACTOR=1 to skip the claim-extractor suite
 #
-# When the served examples are run via this driver, the server is started
-# *once* and reused across all of them (much faster than restarting per script).
+# All other SKIP_* variables (SKIP_HF, SKIP_VLLM, SKIP_SERVE, SKIP_INSTALL)
+# are passed through to each suite's run-all.sh.
 
 set -uo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/lib-common.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-declare -a PASSED=() FAILED=() SKIPPED=()
+declare -a SUITE_PASSED=() SUITE_FAILED=() SUITE_SKIPPED=()
 
-run_one() {
-    local script="$1"
-    local label
-    label="$(basename "$script")"
-    log "================ $label ================"
+run_suite() {
+    local label="$1" script="$2"
+    log "================ suite: $label ================"
     if bash "$script"; then
-        PASSED+=("$label")
+        SUITE_PASSED+=("$label")
     else
-        FAILED+=("$label")
+        SUITE_FAILED+=("$label")
     fi
 }
 
-skip_one() {
+skip_suite() {
     local label="$1" reason="$2"
-    SKIPPED+=("$label  ($reason)")
-    log_warn "skipping $label: $reason"
+    SUITE_SKIPPED+=("$label  ($reason)")
+    log_warn "skipping suite $label: $reason"
 }
 
-# 00 - install
-if [[ "${SKIP_INSTALL:-0}" == "1" ]]; then
-    skip_one "00-install-all.sh" "SKIP_INSTALL=1"
+# scope-guard
+if [[ "${SKIP_SCOPE_GUARD:-0}" == "1" ]]; then
+    skip_suite "scope-guard" "SKIP_SCOPE_GUARD=1"
 else
-    run_one "$SCRIPT_DIR/00-install-all.sh"
+    run_suite "scope-guard" "$SCRIPT_DIR/scope-guard/run-all.sh"
 fi
 
-# 01 - basic README example (uses hf backend by default)
-if [[ "${SKIP_HF:-0}" == "1" ]]; then
-    skip_one "01-readme-basic-quickstart.sh" "SKIP_HF=1"
+# claim-extractor
+if [[ "${SKIP_CLAIM_EXTRACTOR:-0}" == "1" ]]; then
+    skip_suite "claim-extractor" "SKIP_CLAIM_EXTRACTOR=1"
 else
-    run_one "$SCRIPT_DIR/01-readme-basic-quickstart.sh"
-fi
-
-# 02-08 - vllm backend
-if [[ "${SKIP_VLLM:-0}" == "1" ]]; then
-    for script in "$SCRIPT_DIR"/0[2-8]-vllm-*.sh; do
-        skip_one "$(basename "$script")" "SKIP_VLLM=1"
-    done
-else
-    for script in "$SCRIPT_DIR"/0[2-8]-vllm-*.sh; do
-        run_one "$script"
-    done
-fi
-
-# 09 - hf quickstart
-if [[ "${SKIP_HF:-0}" == "1" ]]; then
-    skip_one "09-hf-quickstart.sh" "SKIP_HF=1"
-else
-    run_one "$SCRIPT_DIR/09-hf-quickstart.sh"
-fi
-
-# 10-13 - served examples (share one server)
-if [[ "${SKIP_SERVE:-0}" == "1" ]]; then
-    for script in "$SCRIPT_DIR"/1[0-3]-serve-*.sh; do
-        skip_one "$(basename "$script")" "SKIP_SERVE=1"
-    done
-else
-    log "================ shared server for served scripts ================"
-    trap_stop_server
-    if start_server_if_needed; then
-        export SCOPE_GUARD_SERVER_URL
-        SCOPE_GUARD_SERVER_URL="$(server_url)"
-        for script in "$SCRIPT_DIR"/1[0-3]-serve-*.sh; do
-            run_one "$script"
-        done
-        stop_server || true
-        unset SCOPE_GUARD_SERVER_URL
-    else
-        for script in "$SCRIPT_DIR"/1[0-3]-serve-*.sh; do
-            FAILED+=("$(basename "$script")  (server failed to start)")
-        done
-    fi
+    run_suite "claim-extractor" "$SCRIPT_DIR/claim-extractor/run-all.sh"
 fi
 
 # Summary
 echo
-log "============== SUMMARY =============="
-log_pass "passed:  ${#PASSED[@]}"
-for s in "${PASSED[@]}"; do echo "    + $s"; done
-log_warn "skipped: ${#SKIPPED[@]}"
-for s in "${SKIPPED[@]}"; do echo "    - $s"; done
-if (( ${#FAILED[@]} > 0 )); then
-    log_fail "failed:  ${#FAILED[@]}"
-    for s in "${FAILED[@]}"; do echo "    x $s"; done
+log "============== OVERALL SUMMARY =============="
+log_pass "suites passed:  ${#SUITE_PASSED[@]}"
+for s in "${SUITE_PASSED[@]}"; do echo "    + $s"; done
+log_warn "suites skipped: ${#SUITE_SKIPPED[@]}"
+for s in "${SUITE_SKIPPED[@]}"; do echo "    - $s"; done
+if (( ${#SUITE_FAILED[@]} > 0 )); then
+    log_fail "suites failed: ${#SUITE_FAILED[@]}"
+    for s in "${SUITE_FAILED[@]}"; do echo "    x $s"; done
     exit 1
 fi
-log_pass "all README examples passed"
+log_pass "all README example suites passed"

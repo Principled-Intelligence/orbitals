@@ -74,6 +74,7 @@ Orbitals currently provides the following guardrail modules:
 | Guardrail | Description | Hosting Options |
 |:----------|:------------|:----------------|
 | **[ScopeGuard](README.scope-guard.md)** | Classifies user queries against AI assistant specifications to detect out-of-scope requests, policy violations, and chit-chat | Self-hosted / Cloud hosting |
+| **[ClaimExtractor](README.claim-extractor.md)** | Extracts atomic, decontextualized claims (Factoid, Capability, User Assertion, Unverifiable) and user intents from a conversation, with optional verbatim evidences — a building block for fact-checking, hallucination detection, intent routing, and response auditing | Self-hosted / Cloud hosting |
 | 🚀 *Coming Soon* | More guardrails are on the way — stay tuned for updates! | — |
 
 #### Hosting Options
@@ -86,6 +87,7 @@ Orbitals currently provides the following guardrail modules:
 For detailed documentation, including installation instructions, usage guides, and API references, please visit the Orbitals Documentation.
 
 - [ScopeGuard Documentation](README.scope-guard.md)
+- [ClaimExtractor Documentation](README.claim-extractor.md)
 
 ### FAQ
 
