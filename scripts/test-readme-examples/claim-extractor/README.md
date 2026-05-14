@@ -7,7 +7,7 @@ These complement the unit tests under [`tests/`](../../../tests/), which only
 mock the heavy paths. The scripts in this directory actually load real models,
 start the real FastAPI/vLLM server, and run real HTTP requests, so they require:
 
-- A CUDA-capable GPU (the `claim-extractor-q` model is 4B parameters)
+- A CUDA-capable GPU (the default `claim-extractor-4B-q` model is 4B parameters)
 - ~10 GB of disk for the Hugging Face download cache
 - The `vllm`, `transformers`, `accelerate`, `fastapi`, `uvicorn` extras installed
   (`./00-install-all.sh` will do this)

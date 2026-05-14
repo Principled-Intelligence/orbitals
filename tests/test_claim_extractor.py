@@ -23,23 +23,44 @@ from orbitals.claim_extractor.prompting import (
 from orbitals.types import AIServiceDescription
 
 
-def test_claim_extractor_default_alias_resolves_to_released_model():
+def test_claim_extractor_default_alias_resolves_to_4B_q_model():
     assert (
         ClaimExtractor.maybe_map_model("claim-extractor")
         == "principled-intelligence/claim-extractor-4B-q-2605"
     )
 
 
-def test_claim_extractor_q_alias_resolves_to_released_model():
+def test_claim_extractor_q_alias_resolves_to_4B_q_model():
     assert (
         ClaimExtractor.maybe_map_model("claim-extractor-q")
         == "principled-intelligence/claim-extractor-4B-q-2605"
     )
 
 
+def test_claim_extractor_4B_q_alias_resolves_to_4B_q_model():
+    assert (
+        ClaimExtractor.maybe_map_model("claim-extractor-4B-q")
+        == "principled-intelligence/claim-extractor-4B-q-2605"
+    )
+
+
+def test_claim_extractor_2B_q_alias_resolves_to_2B_q_model():
+    assert (
+        ClaimExtractor.maybe_map_model("claim-extractor-2B-q")
+        == "principled-intelligence/claim-extractor-2B-q-2605"
+    )
+
+
+def test_claim_extractor_unknown_model_name_is_passed_through_unchanged():
+    custom_name = "my-org/my-custom-model"
+    assert ClaimExtractor.maybe_map_model(custom_name) == custom_name
+
+
 def test_claim_extractor_model_mapping_contains_documented_aliases():
     assert "claim-extractor" in MODEL_MAPPING
     assert "claim-extractor-q" in MODEL_MAPPING
+    assert "claim-extractor-4B-q" in MODEL_MAPPING
+    assert "claim-extractor-2B-q" in MODEL_MAPPING
 
 
 def test_no_evidence_response_validates_and_converts_to_full_extractions():
