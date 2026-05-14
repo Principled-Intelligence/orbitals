@@ -13,11 +13,12 @@ Given a conversation (or a single message) and — optionally — the specificat
   * **Unverifiable** — common knowledge, subjective claims, marketing language, visual/UI references
 * **Intents** — explicit goals, requests, or actions the user wants to accomplish (extracted from user messages only)
 
-`claim-extractor` is a building block for a wide range of downstream governance tasks: fact-checking, intent routing, response auditing, and hallucination detection. It is powered by `claim-extractor-q`, an open-weight 4B model fine-tuned to extract atomic, self-contained claims and intents:
+`claim-extractor` is a building block for a wide range of downstream governance tasks: fact-checking, intent routing, response auditing, and hallucination detection. It is powered by open-weight Qwen-family models fine-tuned to extract atomic, self-contained claims and intents, released in two sizes:
 
 | Model | Parameters | Hosting |
 | :--- | :--- | :--- |
-| [`claim-extractor-q`](https://huggingface.co/principled-intelligence/claim-extractor-4B-q-2605) | 4B | Self-hosted (vLLM / HuggingFace) |
+| [`claim-extractor-4B-q`](https://huggingface.co/principled-intelligence/claim-extractor-4B-q-2605) | 4B | Self-hosted (vLLM / HuggingFace) |
+| [`claim-extractor-2B-q`](https://huggingface.co/principled-intelligence/claim-extractor-2B-q-2605) | 2B | Self-hosted (vLLM / HuggingFace) |
 
 ## Quickstart
 
@@ -38,7 +39,8 @@ from orbitals.claim_extractor import ClaimExtractor
 
 ce = ClaimExtractor(
     backend="vllm",  # or "hf" for huggingface
-    model="claim-extractor-q",
+    model="claim-extractor-4B-q",    # for the 4B Qwen-family model
+    # model="claim-extractor-2B-q",  # for the 2B Qwen-family model
 )
 
 ai_service_description = """
@@ -85,7 +87,8 @@ from orbitals.claim_extractor import ClaimExtractor
 
 ce = ClaimExtractor(
     backend="vllm",                   # or "hf"
-    model="claim-extractor-q",
+    model="claim-extractor-4B-q",     # for the 4B Qwen-family model
+    # model="claim-extractor-2B-q",   # for the 2B Qwen-family model
 )
 ```
 
@@ -119,7 +122,7 @@ Override them via the constructor (`ClaimExtractor(backend="vllm", enable_prefix
 ```python
 from orbitals.claim_extractor import ClaimExtractor, Claim, Intent
 
-ce = ClaimExtractor(backend="vllm", model="claim-extractor-q")
+ce = ClaimExtractor(backend="vllm", model="claim-extractor-4B-q")
 message = "Your package is in transit and will arrive on December 12, 2025."
 ai_service_description = "You are a virtual assistant for a parcel delivery service."
 
@@ -237,7 +240,7 @@ Only `identity_role` and `context` are required; every other field is optional.
 
 In addition to a decontextualized `content` string, every `Claim` and `Intent` is designed to carry a list of `evidences` — verbatim excerpts from the source message that support the extraction.
 
-> **Note**: the currently released `claim-extractor-q` model does **not** extract evidences — every `evidences` list will be empty. Evidence extraction is on the roadmap and will ship with a future model release. The `skip_evidences` flag on `ClaimExtractor` and the matching `--skip-evidences` serve flag are reserved for that future release; today they have no effect.
+> **Note**: the currently released `claim-extractor-4B-q` and `claim-extractor-2B-q` models do **not** extract evidences — every `evidences` list will be empty. Evidence extraction is on the roadmap and will ship with a future model release. The `skip_evidences` flag on `ClaimExtractor` and the matching `--skip-evidences` serve flag are reserved for that future release; today they have no effect.
 
 ### Batch Processing
 
@@ -284,11 +287,13 @@ All of this is configured via the `orbitals claim-extractor serve` command:
 # install the necessary packages
 uv add 'orbitals[claim-extractor-serve]'
 
-# start everything (defaults to "claim-extractor", which aliases to claim-extractor-q)
+# start everything (defaults to "claim-extractor", which aliases to claim-extractor-4B-q)
 orbitals claim-extractor serve --port 8000
 
 # or pin a specific model
-orbitals claim-extractor serve claim-extractor-q --port 8000
+orbitals claim-extractor serve claim-extractor-4B-q --port 8000
+# or use the smaller 2B model
+# orbitals claim-extractor serve claim-extractor-2B-q --port 8000
 ```
 
 Once the server is running, you can interact with it as follows:

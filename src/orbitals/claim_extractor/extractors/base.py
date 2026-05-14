@@ -22,6 +22,8 @@ DefaultModel = Literal["claim-extractor"]
 MODEL_MAPPING = {
     "claim-extractor": "principled-intelligence/claim-extractor-4B-q-2605",
     "claim-extractor-q": "principled-intelligence/claim-extractor-4B-q-2605",
+    "claim-extractor-4B-q": "principled-intelligence/claim-extractor-4B-q-2605",
+    "claim-extractor-2B-q": "principled-intelligence/claim-extractor-2B-q-2605",
 }
 
 
