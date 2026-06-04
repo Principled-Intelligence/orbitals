@@ -141,6 +141,37 @@ for intent in result.extractions.intents:
 
 Each `Claim` and `Intent` carries a decontextualized `content` string. An `evidences` field is also present on every extraction (see [Evidences](#evidences) below), but the currently released model does not populate it — it will always be an empty list.
 
+### Intents only
+
+If you only care about the user's **intents** and don't need claims, set `intents_only=True`. This applies a stopping criterion that halts generation as soon as the intents are produced — the model never generates the (often much larger) claims section, so extraction is faster and cheaper. The returned `claims` list is always empty in this mode.
+
+```python
+from orbitals.claim_extractor import ClaimExtractor
+
+ce = ClaimExtractor(backend="vllm", model="claim-extractor-4B-q", intents_only=True)
+
+result = ce.extract(
+    {"role": "user", "content": "Can you book me an appointment for next Tuesday morning?"},
+    ai_service_description=ai_service_description,
+)
+
+for intent in result.extractions.intents:
+    print(intent.content)
+
+assert result.extractions.claims == []
+```
+
+`intents_only` is supported on every backend (`vllm`, `hf`, `api`) and is available both as a constructor default and as a per-call override on `extract` / `batch_extract`:
+
+```python
+ce = ClaimExtractor(backend="vllm", model="claim-extractor-4B-q")  # default: full extraction
+
+# override per call — extract only intents for this request
+result = ce.extract(message, ai_service_description=ai_service_description, intents_only=True)
+```
+
+When serving, set the server-side default with the `--intents-only` flag on `orbitals claim-extractor serve`, or pass `"intents_only": true` on individual requests (see [Serving](#serving-claimextractor-on-premise-or-on-your-infrastructure) below).
+
 ### Claim subtypes
 
 ```python
@@ -294,7 +325,12 @@ orbitals claim-extractor serve --port 8000
 orbitals claim-extractor serve claim-extractor-4B-q --port 8000
 # or use the smaller 2B model
 # orbitals claim-extractor serve claim-extractor-2B-q --port 8000
+
+# extract only intents by default (stops generation before claims)
+# orbitals claim-extractor serve --intents-only --port 8000
 ```
+
+`--intents-only` sets the server-side default; individual requests can still override it by passing `"intents_only": true` (or `false`) in the request body. See [Intents only](#intents-only).
 
 Once the server is running, you can interact with it as follows:
 
