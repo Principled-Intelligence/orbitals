@@ -15,8 +15,10 @@ from orbitals.claim_extractor.extractors.base import MODEL_MAPPING
 from orbitals.claim_extractor.extractors.vllm import _USE_DEFAULT_SPECULATIVE_CONFIG
 from orbitals.claim_extractor.modeling import ClaimExtractorOutput, Extractions
 from orbitals.claim_extractor.prompting import (
+    CLAIMS_STOP_STRING,
     NoEvidenceExtractionsResponseModel,
     convert_to_conversation,
+    parse_intents_only_output,
     prepare_messages,
     validate_extractions_response,
 )
@@ -92,6 +94,78 @@ def test_get_extractions_response_model_uses_no_evidence_schema():
     converted = validated.to_extractions_response()
 
     assert isinstance(converted.extractions, Extractions)
+
+
+def test_parse_intents_only_handles_vllm_style_output_stop_excluded():
+    # vLLM excludes the stop string from output, leaving a dangling comma.
+    text = (
+        '{"extractions": {"intents": '
+        '[{"content": "The user wants package tracking."}], '
+    )
+
+    extractions = parse_intents_only_output(text)
+
+    assert [i.content for i in extractions.intents] == [
+        "The user wants package tracking."
+    ]
+    assert extractions.claims == []
+
+
+def test_parse_intents_only_handles_hf_style_output_stop_included():
+    # HF's stop_strings includes the stop string in the decoded text.
+    text = (
+        '{"extractions": {"intents": '
+        '[{"content": "The user wants package tracking."}], '
+        + CLAIMS_STOP_STRING
+    )
+
+    extractions = parse_intents_only_output(text)
+
+    assert [i.content for i in extractions.intents] == [
+        "The user wants package tracking."
+    ]
+    assert extractions.claims == []
+
+
+def test_parse_intents_only_keeps_evidences_when_present():
+    text = (
+        '{"extractions": {"intents": '
+        '[{"evidences": ["track my package"], '
+        '"content": "The user wants package tracking."}], '
+    )
+
+    extractions = parse_intents_only_output(text)
+
+    assert extractions.intents[0].evidences == ["track my package"]
+    assert extractions.claims == []
+
+
+def test_parse_intents_only_handles_empty_intents():
+    text = '{"extractions": {"intents": [], '
+
+    extractions = parse_intents_only_output(text)
+
+    assert extractions.intents == []
+    assert extractions.claims == []
+
+
+def test_parse_intents_only_returns_empty_on_malformed_output():
+    extractions = parse_intents_only_output("this is not json at all")
+
+    assert extractions.intents == []
+    assert extractions.claims == []
+
+
+def test_parse_intents_only_strips_code_fences():
+    text = (
+        "```json\n"
+        '{"extractions": {"intents": [{"content": "The user wants a refund."}], '
+    )
+
+    extractions = parse_intents_only_output(text)
+
+    assert [i.content for i in extractions.intents] == ["The user wants a refund."]
+    assert extractions.claims == []
 
 
 def test_prepare_messages_serializes_structured_ai_service_description():
@@ -183,6 +257,34 @@ def test_claim_extractor_pipeline_allows_per_call_skip_evidences_override(monkey
     assert preprocess_kwargs == {"skip_evidences": False}
 
 
+def test_claim_extractor_pipeline_forwards_intents_only_constructor_default(monkeypatch):
+    _install_fake_pipeline_modules(monkeypatch)
+    module = importlib.reload(importlib.import_module("hf_pipeline.claim_extractor"))
+    pipeline = module.ClaimExtractionPipeline(
+        model=object(),
+        tokenizer=types.SimpleNamespace(pad_token="</s>"),
+        intents_only=True,
+    )
+
+    _, forward_kwargs, _ = pipeline._sanitize_parameters()
+
+    assert forward_kwargs == {"intents_only": True}
+
+
+def test_claim_extractor_pipeline_allows_per_call_intents_only_override(monkeypatch):
+    _install_fake_pipeline_modules(monkeypatch)
+    module = importlib.reload(importlib.import_module("hf_pipeline.claim_extractor"))
+    pipeline = module.ClaimExtractionPipeline(
+        model=object(),
+        tokenizer=types.SimpleNamespace(pad_token="</s>"),
+        intents_only=False,
+    )
+
+    _, forward_kwargs, _ = pipeline._sanitize_parameters(intents_only=True)
+
+    assert forward_kwargs == {"intents_only": True}
+
+
 def _extract_response_payload(
     *,
     usage: dict[str, int] | None = None,
@@ -226,6 +328,28 @@ def test_claim_extractor_api_serializes_structured_ai_service_description(
         "principles": None,
         "website_url": None,
     }
+
+
+def test_claim_extractor_api_includes_intents_only_in_payload(
+    mocked_claim_extractor_post,
+):
+    ce = ClaimExtractor(backend="api", api_url="http://example.com")
+
+    ce.extract("hi", intents_only=True)
+
+    body = mocked_claim_extractor_post.call_args.kwargs["json"]
+    assert body["intents_only"] is True
+
+
+def test_claim_extractor_api_uses_constructor_intents_only_default(
+    mocked_claim_extractor_post,
+):
+    ce = ClaimExtractor(backend="api", api_url="http://example.com", intents_only=True)
+
+    ce.extract("hi")
+
+    body = mocked_claim_extractor_post.call_args.kwargs["json"]
+    assert body["intents_only"] is True
 
 
 def test_claim_extractor_api_does_not_mutate_caller_headers(

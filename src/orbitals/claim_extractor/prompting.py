@@ -396,6 +396,17 @@ from .modeling import Claim, ClaimExtractorInput, Extractions, ExtractionSubType
 
 LAST_MESSAGE_TAG = "LAST MESSAGE"
 
+# Stop string used by the generation backends when `intents_only` is enabled.
+# The model always emits intents before the `"claims"` key, so stopping as soon
+# as the claims key would begin truncates generation right after the intents are
+# complete. `"` characters inside JSON string values are escaped, so this token
+# only ever appears as the claims object key.
+CLAIMS_STOP_STRING = '"claims":'
+# Marker used to truncate generated text during parsing. vLLM excludes the stop
+# string from its output while HF's `stop_strings` includes it, so we split on
+# the (shorter) key marker to normalize both cases before repairing the JSON.
+_CLAIMS_SPLIT_MARKER = '"claims"'
+
 
 class ExtractionsResponseModel(BaseModel):
     extractions: Extractions
@@ -456,6 +467,73 @@ def validate_extractions_response(
     if isinstance(validated_obj, NoEvidenceExtractionsResponseModel):
         return validated_obj.to_extractions_response()
     return validated_obj
+
+
+def _balance_truncated_json(text: str) -> str:
+    """Close any structures left open in a truncated JSON fragment.
+
+    Scans the string while tracking whether we are inside a string literal (and
+    escape sequences) and appends the minimal `"`, `]` and `}` needed to balance
+    the open brackets. A dangling trailing comma is stripped first.
+    """
+    s = text.rstrip()
+    if s.endswith(","):
+        s = s[:-1].rstrip()
+
+    stack: list[str] = []
+    in_str = False
+    escaped = False
+    for ch in s:
+        if in_str:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch == "}":
+            if stack and stack[-1] == "{":
+                stack.pop()
+        elif ch == "]":
+            if stack and stack[-1] == "[":
+                stack.pop()
+
+    closer = '"' if in_str else ""
+    for opener in reversed(stack):
+        closer += "}" if opener == "{" else "]"
+    return s + closer
+
+
+def parse_intents_only_output(text: str) -> Extractions:
+    """Parse the (truncated) output of an ``intents_only`` generation.
+
+    Generation is stopped at the ``"claims"`` boundary, so the raw text is an
+    incomplete JSON object containing only the intents. We strip code fences,
+    truncate at the claims marker (handles backends that do or do not include
+    the stop string in their output), repair the truncated JSON, and return an
+    :class:`Extractions` with the parsed intents and an empty claims list.
+    """
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        stripped = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
+    stripped = stripped.split(_CLAIMS_SPLIT_MARKER, 1)[0]
+
+    try:
+        data = json.loads(_balance_truncated_json(stripped))
+        inner = data["extractions"] if isinstance(data, dict) else data
+        return Extractions(
+            intents=[Intent.model_validate(i) for i in inner.get("intents", [])],
+            claims=[],
+        )
+    except Exception:
+        return Extractions()
 
 
 def dumps_ai_service_description(

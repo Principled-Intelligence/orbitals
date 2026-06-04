@@ -9,6 +9,7 @@ from ..modeling import (
     ClaimExtractorOutput,
     _parse_raw_output,
 )
+from ..prompting import parse_intents_only_output
 from .base import ClaimExtractor, DefaultModel
 
 
@@ -19,6 +20,7 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         backend: Literal["hf"] = "hf",
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = True,
+        intents_only: bool = False,
         max_new_tokens: int = 20_000,
         do_sample: bool = True,
         temperature: float = 0.7,
@@ -39,11 +41,13 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         super().__init__(backend)
         self.model = self.maybe_map_model(model)
         self.skip_evidences = skip_evidences
+        self.intents_only = intents_only
         self._pipeline = pipeline(
             task="claim-extraction",
             model=self.model,
             trust_remote_code=True,
             skip_evidences=skip_evidences,
+            intents_only=intents_only,
             max_new_tokens=max_new_tokens,
             do_sample=do_sample,
             temperature=temperature,
@@ -59,11 +63,19 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
     def _resolve_flags(
         self,
         skip_evidences: bool | None,
+        intents_only: bool | None,
     ) -> dict[str, bool]:
         resolved: dict[str, bool] = {}
         if skip_evidences is not None:
             resolved["skip_evidences"] = skip_evidences
+        if intents_only is not None:
+            resolved["intents_only"] = intents_only
         return resolved
+
+    def _parse_generated_text(self, generated_text: str, intents_only: bool):
+        if intents_only:
+            return parse_intents_only_output(generated_text)
+        return _parse_raw_output(generated_text)
 
     def _extract(
         self,
@@ -71,15 +83,19 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> ClaimExtractorOutput:
-        pipeline_kwargs = self._resolve_flags(skip_evidences)
+        resolved_intents_only = (
+            intents_only if intents_only is not None else self.intents_only
+        )
+        pipeline_kwargs = self._resolve_flags(skip_evidences, intents_only)
         generated_text = self._pipeline(
             inputs=(conversation, ai_service_description),
             **pipeline_kwargs,
         )[0]["generated_text"]
 
-        extractions = _parse_raw_output(generated_text)
+        extractions = self._parse_generated_text(generated_text, resolved_intents_only)
 
         return ClaimExtractorOutput(
             extractions=extractions,
@@ -94,8 +110,12 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> list[ClaimExtractorOutput]:
+        resolved_intents_only = (
+            intents_only if intents_only is not None else self.intents_only
+        )
         if ai_service_descriptions is not None:
             pipeline_inputs = [
                 (c, ad) for c, ad in zip(conversations, ai_service_descriptions)
@@ -103,7 +123,7 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
         else:
             pipeline_inputs = [(c, ai_service_description) for c in conversations]
 
-        pipeline_kwargs = self._resolve_flags(skip_evidences)
+        pipeline_kwargs = self._resolve_flags(skip_evidences, intents_only)
         pipeline_outputs = self._pipeline(
             pipeline_inputs,
             **pipeline_kwargs,
@@ -113,7 +133,9 @@ class HuggingFaceClaimExtractor(ClaimExtractor):
 
         for pipeline_output in pipeline_outputs:
             generated_text = pipeline_output[0]["generated_text"]
-            extractions = _parse_raw_output(generated_text)
+            extractions = self._parse_generated_text(
+                generated_text, resolved_intents_only
+            )
             results.append(
                 ClaimExtractorOutput(
                     extractions=extractions,

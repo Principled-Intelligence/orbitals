@@ -19,6 +19,7 @@ class ClaimExtractionPipeline(Pipeline):
         model,
         tokenizer=None,
         skip_evidences: bool = True,
+        intents_only: bool = False,
         max_new_tokens: int = 20_000,
         do_sample: bool = True,
         temperature: float = 0.7,
@@ -46,6 +47,7 @@ class ClaimExtractionPipeline(Pipeline):
                 tokenizer.pad_token = tokenizer.eos_token
 
         self.skip_evidences = skip_evidences
+        self.intents_only = intents_only
         self.max_new_tokens = max_new_tokens
         self.do_sample = do_sample
         self.temperature = temperature
@@ -63,10 +65,13 @@ class ClaimExtractionPipeline(Pipeline):
         preprocess_kwargs = {
             "skip_evidences": kwargs.get("skip_evidences", self.skip_evidences)
         }
+        forward_kwargs = {
+            "intents_only": kwargs.get("intents_only", self.intents_only)
+        }
 
         return (
             preprocess_kwargs,
-            {},
+            forward_kwargs,
             {},
         )
 
@@ -95,7 +100,7 @@ class ClaimExtractionPipeline(Pipeline):
 
         return {"text": text}
 
-    def _forward(self, model_inputs):
+    def _forward(self, model_inputs, intents_only: bool = False):
         tokenized = self.tokenizer(
             model_inputs["text"],
             return_tensors="pt",
@@ -103,16 +108,27 @@ class ClaimExtractionPipeline(Pipeline):
             truncation=True,
         ).to(self.device)
 
+        generate_kwargs = dict(
+            max_new_tokens=self.max_new_tokens,
+            do_sample=self.do_sample,
+            temperature=self.temperature,
+            repetition_penalty=self.repetition_penalty,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            min_p=self.min_p,
+        )
+        if intents_only:
+            # Stop as soon as the model starts the `"claims"` key, so only the
+            # intents are generated. The truncated JSON is repaired downstream.
+            generate_kwargs["stop_strings"] = [
+                orbitals.claim_extractor.prompting.CLAIMS_STOP_STRING
+            ]
+            generate_kwargs["tokenizer"] = self.tokenizer
+
         with torch.inference_mode():
             outputs = self.model.generate(
                 **tokenized,
-                max_new_tokens=self.max_new_tokens,
-                do_sample=self.do_sample,
-                temperature=self.temperature,
-                repetition_penalty=self.repetition_penalty,
-                top_p=self.top_p,
-                top_k=self.top_k,
-                min_p=self.min_p,
+                **generate_kwargs,
             )
         return {
             "output_ids": outputs,

@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
         backend="vllm-api",
         model=os.environ["CLAIM_EXTRACTOR_VLLM_MODEL"],
         skip_evidences=os.environ.get("CLAIM_EXTRACTOR_SKIP_EVIDENCES", "1") == "1",
+        intents_only=os.environ.get("CLAIM_EXTRACTOR_INTENTS_ONLY", "0") == "1",
         vllm_serving_url=os.environ["CLAIM_EXTRACTOR_VLLM_SERVING_URL"],
         temperature=float(os.environ.get("CLAIM_EXTRACTOR_TEMPERATURE", "0.7")),
         frequency_penalty=float(
@@ -94,6 +95,7 @@ async def extract(
         str | AIServiceDescription | None, Body()
     ] = None,
     skip_evidences: Annotated[bool | None, Body()] = None,
+    intents_only: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
 ) -> ClaimExtractorResponse:
     global claim_extractor
@@ -103,6 +105,7 @@ async def extract(
         conversation,
         ai_service_description=ai_service_description,
         skip_evidences=skip_evidences,
+        intents_only=intents_only,
         model=model,
     )
     end_time = time.time()
@@ -124,6 +127,7 @@ async def batch_extract(
     ai_service_description: str | AIServiceDescription | None = Body(None),
     ai_service_descriptions: list[str] | list[AIServiceDescription] | None = Body(None),
     skip_evidences: Annotated[bool | None, Body()] = None,
+    intents_only: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
 ) -> list[ClaimExtractorResponse]:
     global claim_extractor
@@ -157,6 +161,7 @@ async def batch_extract(
             conversation,
             ai_service_description=description,
             skip_evidences=skip_evidences,
+            intents_only=intents_only,
             model=model,
         )
         end_time = time.time()
@@ -185,6 +190,7 @@ async def extract_conversation(
         str | AIServiceDescription | None, Body()
     ] = None,
     skip_evidences: Annotated[bool | None, Body()] = None,
+    intents_only: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
 ) -> ConversationClaimExtractorResponse:
     global claim_extractor
@@ -208,6 +214,7 @@ async def extract_conversation(
         prefixes,
         ai_service_description=ai_service_description,
         skip_evidences=skip_evidences,
+        intents_only=intents_only,
         model=model,
     )
     end_time = time.time()
