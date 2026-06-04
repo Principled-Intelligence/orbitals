@@ -18,8 +18,10 @@ from ..modeling import (
     ClaimExtractorOutput,
 )
 from ..prompting import (
+    CLAIMS_STOP_STRING,
     build_prompt,
     get_system_prompt,
+    parse_intents_only_output,
     validate_extractions_response,
 )
 from .base import AsyncClaimExtractor, ClaimExtractor, DefaultModel
@@ -63,6 +65,7 @@ class VLLMClaimExtractor(ClaimExtractor):
         backend: Literal["vllm"] = "vllm",
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = True,
+        intents_only: bool = False,
         temperature: float = 0.7,
         max_tokens: int = 20_000,
         max_model_len: int = 40_000,
@@ -89,6 +92,7 @@ class VLLMClaimExtractor(ClaimExtractor):
         super().__init__(backend)
         self.model = self.maybe_map_model(model)
         self.skip_evidences = skip_evidences
+        self.intents_only = intents_only
         if speculative_config is _USE_DEFAULT_SPECULATIVE_CONFIG:
             speculative_config = dict(_DEFAULT_SPECULATIVE_CONFIG)
         self.llm = vllm.LLM(
@@ -118,12 +122,14 @@ class VLLMClaimExtractor(ClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> ClaimExtractorOutput:
         return self._batch_extract(
             [conversation],
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
+            intents_only=intents_only,
         )[0]
 
     def _batch_extract(
@@ -133,10 +139,14 @@ class VLLMClaimExtractor(ClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> list[ClaimExtractorOutput]:
         resolved_skip_evidences = (
             skip_evidences if skip_evidences is not None else self.skip_evidences
+        )
+        resolved_intents_only = (
+            intents_only if intents_only is not None else self.intents_only
         )
 
         if ai_service_descriptions is not None:
@@ -156,25 +166,35 @@ class VLLMClaimExtractor(ClaimExtractor):
             for c, ad in zip(conversations, descriptions)
         ]
 
-        outputs = self.llm.generate(prompts, self.sampling_params, use_tqdm=False)
+        if resolved_intents_only:
+            sampling_params = self.sampling_params.clone()
+            sampling_params.stop = [CLAIMS_STOP_STRING]
+        else:
+            sampling_params = self.sampling_params
+
+        outputs = self.llm.generate(prompts, sampling_params, use_tqdm=False)
 
         results: list[ClaimExtractorOutput] = []
 
         for output in outputs:
             text = output.outputs[0].text
 
-            # TODO generation errors: handle potentially invalid JSON (retry?)
-            parsed_obj = _strip_lone_surrogates(json.loads(text))
+            if resolved_intents_only:
+                extractions = parse_intents_only_output(text)
+            else:
+                # TODO generation errors: handle potentially invalid JSON (retry?)
+                parsed_obj = _strip_lone_surrogates(json.loads(text))
 
-            # TODO generation errors: handle model validation failure (retry?)
-            validated_obj = validate_extractions_response(
-                parsed_obj,
-                skip_evidences=resolved_skip_evidences,
-            )
+                # TODO generation errors: handle model validation failure (retry?)
+                validated_obj = validate_extractions_response(
+                    parsed_obj,
+                    skip_evidences=resolved_skip_evidences,
+                )
+                extractions = validated_obj.extractions
 
             results.append(
                 ClaimExtractorOutput(
-                    extractions=validated_obj.extractions,
+                    extractions=extractions,
                     model=self.model,
                     usage=None,
                 )
@@ -190,6 +210,7 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         backend: Literal["vllm-api"] = "vllm-api",
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = True,
+        intents_only: bool = False,
         vllm_serving_url: str = "http://localhost:8000",
         temperature: float = 0.7,
         max_tokens: int = 20_000,
@@ -210,6 +231,7 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
             else self.default_model_name
         )
         self.skip_evidences = skip_evidences
+        self.intents_only = intents_only
         self.vllm_serving_url = vllm_serving_url
         self.vllm_temperature = temperature
         self.vllm_max_tokens = max_tokens
@@ -227,6 +249,7 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         conversation: ClaimExtractorInput,
         ai_service_description: str | AIServiceDescription | None,
         skip_evidences: bool | None,
+        intents_only: bool | None,
         prefill: bool,
         chat_templating_tokenizer: str | None = None,
     ) -> ClaimExtractorOutput:
@@ -245,6 +268,9 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         resolved_skip_evidences = (
             skip_evidences if skip_evidences is not None else self.skip_evidences
         )
+        resolved_intents_only = (
+            intents_only if intents_only is not None else self.intents_only
+        )
 
         prompt = build_prompt(
             tokenizer=tokenizer,
@@ -254,39 +280,47 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
             prefill=prefill,
         )
 
+        request_body = {
+            "model": model_name,
+            "prompt": prompt,
+            "temperature": self.vllm_temperature,
+            "max_tokens": self.vllm_max_tokens,
+            "frequency_penalty": self.vllm_frequency_penalty,
+            "presence_penalty": self.vllm_presence_penalty,
+            "repetition_penalty": self.vllm_repetition_penalty,
+            "top_p": self.vllm_top_p,
+            "top_k": self.vllm_top_k,
+            "min_p": self.vllm_min_p,
+        }
+        if resolved_intents_only:
+            request_body["stop"] = [CLAIMS_STOP_STRING]
+
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.vllm_serving_url}/v1/completions",
-                json={
-                    "model": model_name,
-                    "prompt": prompt,
-                    "temperature": self.vllm_temperature,
-                    "max_tokens": self.vllm_max_tokens,
-                    "frequency_penalty": self.vllm_frequency_penalty,
-                    "presence_penalty": self.vllm_presence_penalty,
-                    "repetition_penalty": self.vllm_repetition_penalty,
-                    "top_p": self.vllm_top_p,
-                    "top_k": self.vllm_top_k,
-                    "min_p": self.vllm_min_p,
-                },
+                json=request_body,
                 headers={"Content-Type": "application/json"},
             ) as response:
                 response.raise_for_status()
                 response_json = await response.json()
                 response_text = response_json["choices"][0]["text"]
 
-        try:
-            parsed_obj = _strip_lone_surrogates(json.loads(response_text))
-        except json.JSONDecodeError:
-            raise ValueError(f"Failed to parse generated text: {response_json}")
+        if resolved_intents_only:
+            extractions = parse_intents_only_output(response_text)
+        else:
+            try:
+                parsed_obj = _strip_lone_surrogates(json.loads(response_text))
+            except json.JSONDecodeError:
+                raise ValueError(f"Failed to parse generated text: {response_json}")
 
-        try:
-            validated_obj = validate_extractions_response(
-                parsed_obj,
-                skip_evidences=resolved_skip_evidences,
-            )
-        except pydantic.ValidationError as e:
-            raise ValueError(f"Failed to validate generated text: {e}")
+            try:
+                validated_obj = validate_extractions_response(
+                    parsed_obj,
+                    skip_evidences=resolved_skip_evidences,
+                )
+            except pydantic.ValidationError as e:
+                raise ValueError(f"Failed to validate generated text: {e}")
+            extractions = validated_obj.extractions
 
         system_prompt_tokens = (
             0
@@ -295,7 +329,7 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         )
 
         return ClaimExtractorOutput(
-            extractions=validated_obj.extractions,
+            extractions=extractions,
             model=model_name,
             # TODO usage implementation is mocked
             usage=LLMUsage(
@@ -313,6 +347,7 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         model: str | None = None,
         chat_templating_tokenizer: str | None = None,
         **kwargs,
@@ -321,6 +356,7 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
             conversations=[conversation],
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
+            intents_only=intents_only,
             model=model,
             chat_templating_tokenizer=chat_templating_tokenizer,
         )
@@ -333,6 +369,7 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         model: str | None = None,
         chat_templating_tokenizer: str | None = None,
         **kwargs,
@@ -355,6 +392,7 @@ class AsyncVLLMApiClaimExtractor(AsyncClaimExtractor):
                 conversation=c,
                 ai_service_description=aisd,
                 skip_evidences=skip_evidences,
+                intents_only=intents_only,
                 # TODO supporting True on this parameter is a bit tricky
                 # problem is the grammar-based decoding, which is unaware of the prefilling
                 prefill=False,

@@ -138,6 +138,7 @@ class ClaimExtractor(BaseClaimExtractor):
         backend: Literal["hf"] = "hf",
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = True,
+        intents_only: bool = False,
         max_new_tokens: int = 20_000,
         do_sample: bool = False,
         temperature: float = 0.7,
@@ -156,6 +157,7 @@ class ClaimExtractor(BaseClaimExtractor):
         backend: Literal["vllm"],
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = True,
+        intents_only: bool = False,
         temperature: float = 0.7,
         max_tokens: int = 20_000,
         max_model_len: int = 40_000,
@@ -180,6 +182,7 @@ class ClaimExtractor(BaseClaimExtractor):
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = True,
+        intents_only: bool = False,
         custom_headers: dict[str, str] | None = None,
     ) -> APIClaimExtractor: ...
 
@@ -192,6 +195,7 @@ class ClaimExtractor(BaseClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> ClaimExtractorOutput:
         conversation = self._validate_conversation(conversation)
@@ -199,6 +203,7 @@ class ClaimExtractor(BaseClaimExtractor):
             conversation,
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
+            intents_only=intents_only,
             **kwargs,
         )
 
@@ -208,6 +213,7 @@ class ClaimExtractor(BaseClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> ClaimExtractorOutput:
         raise NotImplementedError
@@ -219,6 +225,7 @@ class ClaimExtractor(BaseClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> list[ClaimExtractorOutput]:
         if len(conversations) == 0:
@@ -234,6 +241,7 @@ class ClaimExtractor(BaseClaimExtractor):
             ai_service_description=ai_service_description,
             ai_service_descriptions=ai_service_descriptions,
             skip_evidences=skip_evidences,
+            intents_only=intents_only,
             **kwargs,
         )
 
@@ -244,6 +252,7 @@ class ClaimExtractor(BaseClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> list[ClaimExtractorOutput]:
         raise NotImplementedError
@@ -256,6 +265,7 @@ class AsyncClaimExtractor(BaseClaimExtractor):
         backend: Literal["vllm-api"],
         model: DefaultModel | str = "claim-extractor",
         skip_evidences: bool = True,
+        intents_only: bool = False,
         vllm_serving_url: str = "http://localhost:8000",
         temperature: float = 0.7,
         max_tokens: int = 20_000,
@@ -277,6 +287,7 @@ class AsyncClaimExtractor(BaseClaimExtractor):
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = True,
+        intents_only: bool = False,
         custom_headers: dict[str, str] | None = None,
     ) -> AsyncAPIClaimExtractor: ...
 
@@ -289,6 +300,7 @@ class AsyncClaimExtractor(BaseClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> ClaimExtractorOutput:
         conversation = self._validate_conversation(conversation)
@@ -296,6 +308,7 @@ class AsyncClaimExtractor(BaseClaimExtractor):
             conversation,
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
+            intents_only=intents_only,
             **kwargs,
         )
 
@@ -305,6 +318,7 @@ class AsyncClaimExtractor(BaseClaimExtractor):
         *,
         ai_service_description: str | AIServiceDescription | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> ClaimExtractorOutput:
         raise NotImplementedError
@@ -316,6 +330,7 @@ class AsyncClaimExtractor(BaseClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> list[ClaimExtractorOutput]:
         if len(conversations) == 0:
@@ -331,6 +346,7 @@ class AsyncClaimExtractor(BaseClaimExtractor):
             ai_service_description=ai_service_description,
             ai_service_descriptions=ai_service_descriptions,
             skip_evidences=skip_evidences,
+            intents_only=intents_only,
             **kwargs,
         )
 
@@ -341,6 +357,7 @@ class AsyncClaimExtractor(BaseClaimExtractor):
         ai_service_description: str | AIServiceDescription | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescription] | None = None,
         skip_evidences: bool | None = None,
+        intents_only: bool | None = None,
         **kwargs,
     ) -> list[ClaimExtractorOutput]:
         raise NotImplementedError

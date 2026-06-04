@@ -33,6 +33,10 @@ def serve(
         "claim-extractor", help="The model used for vLLM serving"
     ),
     skip_evidences: bool = typer.Option(True, help="Whether to skip evidences"),
+    intents_only: bool = typer.Option(
+        False,
+        help="Only extract intents (stop generation before claims) by default",
+    ),
     port: int = typer.Option(
         8000, "-p", "--port", help="The port to use for the server"
     ),
@@ -91,6 +95,7 @@ def serve(
     os.environ["CLAIM_EXTRACTOR_VLLM_MODEL"] = vllm_model
     os.environ["CLAIM_EXTRACTOR_VLLM_SERVING_URL"] = f"http://localhost:{vllm_port}"
     os.environ["CLAIM_EXTRACTOR_SKIP_EVIDENCES"] = str(1) if skip_evidences else str(0)
+    os.environ["CLAIM_EXTRACTOR_INTENTS_ONLY"] = str(1) if intents_only else str(0)
     os.environ["CLAIM_EXTRACTOR_TEMPERATURE"] = str(temperature)
     os.environ["CLAIM_EXTRACTOR_FREQUENCY_PENALTY"] = str(frequency_penalty)
     os.environ["CLAIM_EXTRACTOR_PRESENCE_PENALTY"] = str(presence_penalty)
