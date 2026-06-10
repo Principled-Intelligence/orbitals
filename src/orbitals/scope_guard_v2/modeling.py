@@ -25,7 +25,6 @@ class ScopeClass(str, Enum):
     POTENTIALLY_SUPPORTED = "Potentially Supported"
     PREDEFINED_ANSWER = "Predefined Answer"
     HUMAN_OVERSIGHT = "Human Oversight"
-    HUMAN_REVIEW = "Human Oversight"
     OUT_OF_SCOPE = "Out of Scope"
     RESTRICTED = "Restricted"
     CHIT_CHAT = "Chit Chat"

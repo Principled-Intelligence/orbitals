@@ -67,7 +67,6 @@ def test_scope_guard_v2_scope_classes():
     }
     assert ScopeClass.RESTRICTED == "Restricted"
     assert ScopeClass.HUMAN_OVERSIGHT.value == "Human Oversight"
-    assert ScopeClass.HUMAN_REVIEW.value == "Human Oversight"
 
 
 def test_scope_guard_v2_input_accepts_documented_shapes():
@@ -131,13 +130,6 @@ def test_ai_service_description_v2_forbids_extra_fields():
             context="Context",
             unknown_field="nope",  # type: ignore[call-arg]
         )
-
-
-def test_scope_guard_v2_model_names_pass_through():
-    from orbitals.scope_guard_v2 import ScopeGuardV2
-
-    assert ScopeGuardV2.maybe_map_model("my-org/v2-model") == "my-org/v2-model"
-    assert ScopeGuardV2.maybe_map_model("scope-guard-q") == "scope-guard-q"
 
 
 def test_scope_guard_v2_default_safety_principles_add_constraints():

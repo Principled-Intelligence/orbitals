@@ -36,7 +36,7 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
         )
         if model is None:
             raise ValueError("A model name must be provided for ScopeGuardV2.")
-        self.model = self.maybe_map_model(model)
+        self.model = model
         self._pipeline = pipeline(
             task="scope-guard-v2",
             model=self.model,

@@ -10,8 +10,6 @@ import httpx
 import typer
 import uvicorn
 
-from orbitals.scope_guard_v2 import ScopeGuardV2
-
 app = typer.Typer()
 
 
@@ -50,8 +48,6 @@ def serve(
         None, help="Extra arguments to pass to the vLLM server"
     ),
 ):
-    vllm_model = ScopeGuardV2.maybe_map_model(vllm_model)
-
     os.environ["SCOPE_GUARD_V2_VLLM_MODEL"] = vllm_model
     os.environ["SCOPE_GUARD_V2_VLLM_SERVING_URL"] = f"http://localhost:{vllm_port}"
     os.environ["SCOPE_GUARD_V2_SKIP_EVIDENCES"] = (

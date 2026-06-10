@@ -51,7 +51,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         )
         if model is None:
             raise ValueError("A model name must be provided for ScopeGuardV2.")
-        self.model = self.maybe_map_model(model)
+        self.model = model
         self.skip_evidences = skip_evidences
         self.llm = vllm.LLM(
             model=self.model,
@@ -156,9 +156,9 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         )
         if model is None:
             raise ValueError("A model name must be provided for AsyncScopeGuardV2.")
-        self.default_model_name = self.maybe_map_model(model)
+        self.default_model_name = model
         self.default_tokenizer_name = (
-            self.maybe_map_model(chat_templating_tokenizer)
+            chat_templating_tokenizer
             if chat_templating_tokenizer is not None
             else self.default_model_name
         )
@@ -177,10 +177,8 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         prefill: bool,
         chat_templating_tokenizer: str | None = None,
     ) -> ScopeGuardV2Output:
-        model_name = self.maybe_map_model(model_name) if model_name is not None else None
-
         if chat_templating_tokenizer is not None:
-            tokenizer = _get_tokenizer(self.maybe_map_model(chat_templating_tokenizer))
+            tokenizer = _get_tokenizer(chat_templating_tokenizer)
         elif model_name is not None:
             tokenizer = _get_tokenizer(model_name)
         else:
@@ -290,6 +288,8 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
                 conversation=c,
                 ai_service_description=aisd,
                 skip_evidences=skip_evidences,
+                # TODO supporting True on this parameter is a bit tricky
+                # problem is the grammar-based decoding, which is unaware of the prefilling
                 prefill=False,
                 chat_templating_tokenizer=chat_templating_tokenizer,
             )

@@ -53,13 +53,13 @@ The AI Service Description may be a structured document with labelled fields, or
 
 ## Instructions
 
-1. **Extract Evidences**: Identify and quote specific excerpts from the AI Service Description that are relevant to understanding whether and how the AI Service can handle the LAST USER MESSAGE. Look for:
+1. **Extract Evidences**: Identify and quote specific excerpts from the AI Service Description that are relevant to understanding whether and how the AI Service can handle the message tagged LAST MESSAGE. Look for:
    - Functionalities that might address the user's query
    - Constraints that would forbid or restrict the request
    - Knowledge Scope boundaries that the request may fall outside of
    - Predefined Responses whose trigger matches the request
    - Escalation Criteria that the request may meet
-2. **Contextualise**: Read the conversation for context. Prior messages provide context only; your classification must reflect the intent of the message tagged LAST USER MESSAGE alone.
+2. **Contextualise**: Read the conversation for context. Prior messages provide context only; your classification must reflect the intent of the message tagged LAST MESSAGE alone.
 3. **Classify**: Based on the evidence extracted, assign exactly one of the scope classes above. If the message could fall under multiple classes, prefer the more specific or more restrictive one (e.g. "Restricted" over "Out of Scope", "Directly Supported" over "Potentially Supported").
 4. **Respond**: Provide:
    - `evidences`: verbatim quotes from the AI service description that support your choice (or null if not applicable)

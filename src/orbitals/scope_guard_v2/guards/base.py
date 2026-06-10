@@ -42,10 +42,6 @@ class BaseScopeGuardV2:
 
         return decorator
 
-    @classmethod
-    def maybe_map_model(cls, model: str) -> str:
-        return model
-
     def __new__(
         cls,
         backend: str = "vllm",
