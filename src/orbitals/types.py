@@ -61,3 +61,47 @@ class AIServiceDescription(BaseModel):
         default=None,
         description="The URL of the AI Service website",
     )
+
+
+class PredefinedResponse(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    trigger: str = Field(
+        description="When this scenario occurs or topic is mentioned (e.g., 'user asks for support contact', 'mentions billing issues')"
+    )
+    response: str = Field(
+        description="The specific response to provide in this scenario"
+    )
+
+
+class AIServiceDescriptionV2(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    identity_role: str = Field(
+        description="Identity, role and objectives of the AI Service. Gives a general idea of what the service is about."
+    )
+    context: str = Field(
+        description="Context in which the AI Service operates. The company, the sector, the users, the location, etc."
+    )
+    knowledge_scope: str | None = Field(
+        default=None, description="Scope of knowledge and expertise of the AI Service"
+    )
+    functionalities: str | list[str] | None = Field(
+        default=None, description="Functionalities provided by the AI Service"
+    )
+    constraints: str | list[str] | None = Field(
+        default=None,
+        description="Things the AI Service should not do, restricted topics, or forbidden actions",
+    )
+    predefined_responses: str | list[str | PredefinedResponse] | None = Field(
+        default=None,
+        description="Specific responses for certain scenarios, topics, or triggers. Can be simple strings describing what to respond with, or structured PredefinedResponse objects for more control",
+    )
+    escalation_criteria: str | list[str] | None = Field(
+        default=None,
+        description="Situations or conditions when queries should be escalated to human oversight",
+    )
+    response_guidelines: str | None = Field(
+        default=None,
+        description="Guidelines for how the AI Service should respond to users (tone, style, format)",
+    )
