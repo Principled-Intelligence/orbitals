@@ -10,8 +10,9 @@ concurrency:
 
 jobs:
     claude-review:
-        # Skip bot-authored PRs (e.g. dependabot) — no value in reviewing them
-        if: ${{ github.event.pull_request.user.type != 'Bot' }}
+        # Skip bot-authored PRs (e.g. dependabot) — no value in reviewing them —
+        # and skip drafts until they're marked ready for review.
+        if: ${{ github.event.pull_request.user.type != 'Bot' && github.event.pull_request.draft == false }}
 
         runs-on: ubuntu-latest
         permissions:
