@@ -1,0 +1,35 @@
+name: Backport merged PR
+
+on:
+  pull_request_target:
+    types: [closed, labeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: backport-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  backport:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.pull_request.merged == true &&
+      (
+        github.event.action == 'closed' ||
+        (github.event.action == 'labeled' && startsWith(github.event.label.name, 'backport '))
+      )
+    steps:
+      - name: Generate App token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.BACKPORT_APP_ID }}
+          private-key: ${{ secrets.BACKPORT_APP_PRIVATE_KEY }}
+
+      - name: Backport
+        uses: Principled-Intelligence/github-actions/backport@v2
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
