@@ -67,11 +67,19 @@ training prompt, and the user turn must carry the selector.
 
 Replaced verbatim with the training prompt. Pinned:
 
-    sha256(SYSTEM_PROMPT) == 1f37419f2f236b695c73ec814a9682905bdd0ce8ae98bc5fa52ab2ef2dcd0fc4
+    sha256(SYSTEM_PROMPT) == f0f68e48096938b93c2c497386295ff7db2929b128e9dddea944ebb6578960b5
+    len(SYSTEM_PROMPT) == 7665, ends with "\n"
 
-This is the hash `unsafe-eval` records as `profile/system.txt` in every 2608
-promptfix evaluation, so the eval harness, the trainer and the client all pin the
-same bytes.
+These are the bytes the trainer's `src/prompting.py` produces and the model
+trained on: the chat template places `<|im_end|>` directly after the content, so
+the trailing newline is part of what the model saw.
+
+Two related artefacts differ from this by exactly that newline, and are noted here
+so nobody "fixes" the pin to match them: `unsafe-eval` strips a trailing newline
+when loading `profile/system.txt` and records `1f37419f…` (7,664 chars), so every
+published evaluation ran with a one-character train/eval mismatch; and the
+`system_prompt.txt` shipped in the 2608 Hub releases is that stripped version.
+Both should be corrected on their own side. The library follows training.
 
 The prompt interpolates two things that therefore also change:
 
