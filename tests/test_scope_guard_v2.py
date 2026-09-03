@@ -533,3 +533,78 @@ def test_scope_guard_v2_output_reasoning_is_optional():
     assert out.reasoning is None
     assert out.evidences is None
     assert out.suggested_response is None
+
+
+# --- user turn and selection resolution -------------------------------------
+
+
+def _user_turn(**kwargs) -> str:
+    from orbitals.scope_guard_v2.prompting import prepare_input_messages
+
+    messages = prepare_input_messages("hello", "desc", **kwargs)
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+    return messages[1]["content"]
+
+
+def test_prepare_input_messages_default_requests_all_four_fields():
+    turn = _user_turn()
+    assert turn.endswith(
+        '**END OF THE CONVERSATION DUMP**\n\n\n**REQUESTED OUTPUT FIELDS**\n\n'
+        '["evidences", "reasoning", "scope_class", "suggested_response"]'
+    )
+    assert "SKIP EVIDENCES" not in turn
+
+
+def test_prepare_input_messages_skip_evidences_drops_only_evidences():
+    turn = _user_turn(skip_evidences=True)
+    assert turn.endswith('["reasoning", "scope_class", "suggested_response"]')
+    assert _user_turn(skip_evidences=False) == _user_turn()
+
+
+def test_prepare_input_messages_output_fields_selects_the_keys():
+    turn = _user_turn(output_fields=["scope_class"])
+    assert turn.endswith('**REQUESTED OUTPUT FIELDS**\n\n["scope_class"]')
+
+
+def test_prepare_input_messages_conflicting_flags_warn_and_output_fields_wins():
+    with pytest.warns(DeprecationWarning, match="output_fields"):
+        turn = _user_turn(output_fields=["evidences", "scope_class"], skip_evidences=True)
+    assert turn.endswith('["evidences", "scope_class"]')
+
+
+def test_prepare_input_messages_agreeing_flags_do_not_warn(recwarn):
+    # skip_evidences=True implies exactly these three, so the pair agrees
+    turn = _user_turn(
+        output_fields=["reasoning", "scope_class", "suggested_response"], skip_evidences=True
+    )
+    assert turn.endswith('["reasoning", "scope_class", "suggested_response"]')
+    assert not [w for w in recwarn if issubclass(w.category, DeprecationWarning)]
+
+
+def test_resolve_selection_returns_none_when_nothing_was_passed():
+    from orbitals.scope_guard_v2.prompting import resolve_selection
+
+    assert resolve_selection(None, None) is None
+    assert resolve_selection(None, True) == ("reasoning", "scope_class", "suggested_response")
+    assert resolve_selection(None, False) == (
+        "evidences", "reasoning", "scope_class", "suggested_response",
+    )
+    assert resolve_selection(["scope_class", "evidences"], None) == ("evidences", "scope_class")
+
+
+def test_build_prompt_prefill_uses_the_selections_first_key():
+    from orbitals.scope_guard_v2.prompting import build_prompt
+
+    class _Tok:
+        def apply_chat_template(self, messages, **kwargs):
+            return "<prompt>"
+
+    assert build_prompt(_Tok(), "hello", "desc", prefill=True).endswith('{"evidences":')
+    assert build_prompt(_Tok(), "hello", "desc", skip_evidences=True, prefill=True).endswith(
+        '{"reasoning":'
+    )
+    assert build_prompt(
+        _Tok(), "hello", "desc", prefill=True, output_fields=["scope_class"]
+    ).endswith('{"scope_class":')
+    assert build_prompt(_Tok(), "hello", "desc") == "<prompt>"

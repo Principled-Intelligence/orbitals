@@ -15,6 +15,7 @@ eight literal strings is what catches the rendering half of that.
 from __future__ import annotations
 
 import json
+import warnings
 from functools import lru_cache
 from typing import Iterable
 
@@ -246,43 +247,116 @@ def convert_to_conversation(messages: ScopeGuardV2Input) -> Conversation:
     return conversation
 
 
+def _selection_from_skip_evidences(skip_evidences: bool) -> tuple[str, ...]:
+    if skip_evidences:
+        return tuple(f for f in ALL_FIELDS if f != "evidences")
+    return ALL_FIELDS
+
+
+def resolve_selection(
+    output_fields: Iterable[str] | None,
+    skip_evidences: bool | None,
+) -> tuple[str, ...] | None:
+    """Combine the two ways of asking for output fields at one precedence level.
+
+    `output_fields` is the general mechanism; `skip_evidences` is the pre-existing
+    convenience meaning "everything except evidences". When both are given and
+    disagree, `output_fields` wins and a DeprecationWarning names both values, so
+    a caller migrating from one to the other cannot silently get the wrong shape.
+
+    Args:
+        output_fields: Field names, or None if not specified at this level.
+        skip_evidences: The legacy flag, or None if not specified at this level.
+
+    Returns:
+        A normalised selection, or None when neither argument was given -- the
+        caller then falls through to the next precedence level (constructor
+        defaults, then all fields).
+    """
+    if output_fields is None and skip_evidences is None:
+        return None
+    if output_fields is None:
+        return _selection_from_skip_evidences(bool(skip_evidences))
+    selection = normalize_selection(output_fields)
+    if skip_evidences is not None:
+        implied = _selection_from_skip_evidences(skip_evidences)
+        if implied != selection:
+            warnings.warn(
+                f"output_fields={list(selection)} and skip_evidences={skip_evidences} "
+                f"disagree (skip_evidences implies {list(implied)}); using output_fields. "
+                "Pass only one of them.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+    return selection
+
+
 def prepare_input_messages(
     conversation: ScopeGuardV2Input,
     ai_service_description: AIServiceDescriptionV2 | str,
-    skip_evidences: bool = False,
-):
+    skip_evidences: bool | None = None,
+    output_fields: Iterable[str] | None = None,
+) -> list[dict[str, str]]:
+    """Build the system and user turns for one classification request.
+
+    The system prompt is constant; the per-request field selection rides in the last
+    block of the user turn, so the long prefix stays cacheable across requests.
+
+    Args:
+        conversation: The conversation or single user message to classify.
+        ai_service_description: The service description, structured or free text.
+        skip_evidences: Legacy convenience for "all fields except evidences".
+        output_fields: The fields the model must emit. `scope_class` is always
+            included. Takes precedence over `skip_evidences` if both are given.
+
+    Returns:
+        A two-message list suitable for a chat template.
+    """
     if isinstance(ai_service_description, AIServiceDescriptionV2):
         ai_service_description = ai_service_description.model_dump_json()
+
+    selection = resolve_selection(output_fields, skip_evidences) or ALL_FIELDS
 
     _conv = convert_to_conversation(conversation)
     conversation_dump = dumps_conversation(_conv)
 
     user_input = f"**START OF THE AI SERVICE DESCRIPTION**\n\n{ai_service_description}\n\n**END OF THE AI SERVICE DESCRIPTION**\n\n\n"
     user_input += f"**START OF THE CONVERSATION DUMP**\n\n{conversation_dump}\n\n**END OF THE CONVERSATION DUMP**"
-    if skip_evidences:
-        user_input += "\n\n**SKIP EVIDENCES**: do not report evidences, report only reasoning, scope_class, and suggested_response."
+    user_input += f"\n\n\n{render_selector_block(selection)}"
 
-    messages = [
-        {
-            "role": "system",
-            "content": SYSTEM_PROMPT,
-        },
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_input},
     ]
-    return messages
 
 
 def build_prompt(
     tokenizer,
     conversation: ScopeGuardV2Input,
     ai_service_description: AIServiceDescriptionV2 | str,
-    skip_evidences: bool = False,
+    skip_evidences: bool | None = None,
     prefill: bool = False,
+    output_fields: Iterable[str] | None = None,
 ) -> str:
+    """Render the full prompt string for a completion-style backend.
+
+    Args:
+        tokenizer: A tokenizer exposing `apply_chat_template`.
+        conversation: The conversation or single user message to classify.
+        ai_service_description: The service description, structured or free text.
+        skip_evidences: Legacy convenience for "all fields except evidences".
+        prefill: If True, append the opening of the JSON object up to and including
+            the first requested key, so generation starts at its value.
+        output_fields: The fields the model must emit; see `prepare_input_messages`.
+
+    Returns:
+        The prompt string.
+    """
     messages = prepare_input_messages(
         conversation,
         ai_service_description,
         skip_evidences,
+        output_fields=output_fields,
     )
     prompt = tokenizer.apply_chat_template(
         messages,
@@ -292,9 +366,7 @@ def build_prompt(
     )
 
     if prefill:
-        if skip_evidences:
-            prompt += '{"evidences": null, "reasoning": "'
-        else:
-            prompt += '{"evidences":'
+        selection = resolve_selection(output_fields, skip_evidences) or ALL_FIELDS
+        prompt += f'{{"{selection[0]}":'
 
     return prompt
