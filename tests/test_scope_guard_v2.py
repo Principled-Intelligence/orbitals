@@ -671,3 +671,92 @@ def test_base_guard_constructor_conflict_warns_once_at_construction():
         g = _stub_guard(output_fields=["evidences", "scope_class"], skip_evidences=True)
     g.validate("q", ai_service_description="d")
     assert g.seen[-1] == ("evidences", "scope_class")
+
+
+# --- vllm backends -----------------------------------------------------------
+
+
+def test_check_shipped_system_prompt_warns_only_on_real_drift(tmp_path, caplog):
+    import logging
+
+    from orbitals.scope_guard_v2.guards.vllm import check_shipped_system_prompt
+    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT
+
+    # no file: silent
+    check_shipped_system_prompt(str(tmp_path))
+    # same bytes minus trailing newline (what the Hub ships): silent
+    (tmp_path / "system_prompt.txt").write_text(SYSTEM_PROMPT.rstrip("\n"), encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt(str(tmp_path))
+    assert not caplog.records
+    # a different prompt generation: warns and names both hashes
+    (tmp_path / "system_prompt.txt").write_text("You are a 2606 classifier.", encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt(str(tmp_path))
+    assert any("system_prompt.txt" in r.message and "f0f68e48" in r.message for r in caplog.records)
+
+
+async def test_async_vllm_api_backend_sends_selection_schema_and_parses_partial_output(monkeypatch):
+    """The HTTP vLLM backend must ask for exactly the selected keys and accept a
+    completion that contains only them."""
+    from orbitals.scope_guard_v2 import AsyncScopeGuardV2, ScopeClass
+
+    captured: dict[str, Any] = {}
+
+    class _Tok:
+        def apply_chat_template(self, messages, **kwargs):
+            captured["messages"] = messages
+            return "PROMPT"
+
+        def encode(self, text):
+            return [0] * 10
+
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.vllm._get_tokenizer", lambda name: _Tok()
+    )
+
+    payload = {
+        "choices": [{"text": '{"scope_class": "Out of Scope"}'}],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105},
+    }
+
+    # vllm.py uses `async with session.post(...) as response`, unlike api.py which
+    # awaits it, so the fake must return an async context manager, not a coroutine.
+    class _PostCtx:
+        async def __aenter__(self):
+            return _FakeAiohttpResponse(payload)
+
+        async def __aexit__(self, *exc_info):
+            return None
+
+    class _FakeVllmSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return None
+
+        def post(self, url, *, json, headers):
+            captured["url"] = url
+            captured["json"] = json
+            return _PostCtx()
+
+    def _session_factory():
+        return _FakeVllmSession()
+
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.vllm.aiohttp.ClientSession", _session_factory
+    )
+
+    sg = AsyncScopeGuardV2(backend="vllm-api", model="m", vllm_serving_url="http://x")
+    result = await sg.validate(
+        "hello", ai_service_description="desc", output_fields=["scope_class"]
+    )
+
+    body = captured["json"]
+    assert body["prompt"] == "PROMPT"
+    assert list(body["structured_outputs"]["json"]["properties"]) == ["scope_class"]
+    assert captured["messages"][1]["content"].endswith('["scope_class"]')
+    assert result.scope_class == ScopeClass.OUT_OF_SCOPE
+    assert result.reasoning is None
+    assert result.evidences is None
