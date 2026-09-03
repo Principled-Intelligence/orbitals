@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import warnings
 from functools import lru_cache
-from typing import Iterable
+from typing import Any, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
@@ -85,7 +85,7 @@ def render_selector_block(selection: Iterable[str]) -> str:
 
 # Per-field type and description for the wire model of one selection. Kept next to
 # the prompt's "Field types" list so the two cannot drift apart unnoticed.
-_FIELD_SPECS: dict[str, tuple[type, str]] = {
+_FIELD_SPECS: dict[str, tuple[Any, str]] = {
     "evidences": (
         list[str] | None,
         "Evidences from the AI Service Description supporting this classification.",
