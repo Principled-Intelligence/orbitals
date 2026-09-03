@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -760,3 +761,51 @@ async def test_async_vllm_api_backend_sends_selection_schema_and_parses_partial_
     assert result.scope_class == ScopeClass.OUT_OF_SCOPE
     assert result.reasoning is None
     assert result.evidences is None
+
+
+# --- hf backend -------------------------------------------------------------
+
+
+def test_hf_backend_passes_selection_to_the_pipeline_and_accepts_partial_output(monkeypatch):
+    """hf.py imports transformers lazily inside __init__, so a fake module in
+    sys.modules is enough -- the real package is not a test dependency."""
+    import sys
+    import types
+
+    from orbitals.scope_guard_v2 import ScopeClass, ScopeGuardV2
+
+    seen: dict[str, Any] = {}
+
+    class _FakePipeline:
+        def __init__(self, **kwargs):
+            seen["init"] = kwargs
+
+        def __call__(self, inputs, **kwargs):
+            seen["call"] = kwargs
+            single = isinstance(inputs, tuple)
+            # a real model emits exactly the requested keys; so must the fake, or the
+            # strict per-selection schema rejects it (which is the point of the schema)
+            payload = {"reasoning": "r", "scope_class": "Chit Chat"}
+            payload = {k: v for k, v in payload.items() if k in kwargs["output_fields"]}
+            out = [{"generated_text": json.dumps(payload)}]
+            return out if single else [out for _ in inputs]
+
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        types.SimpleNamespace(pipeline=lambda **kwargs: _FakePipeline(**kwargs)),
+    )
+
+    sg = ScopeGuardV2(backend="hf", model="m", output_fields=["reasoning", "scope_class"])
+    assert seen["init"]["output_fields"] == ("reasoning", "scope_class")
+
+    result = sg.validate("hello", ai_service_description="desc")
+    assert seen["call"]["output_fields"] == ("reasoning", "scope_class")
+    assert result.scope_class == ScopeClass.CHIT_CHAT
+    assert result.reasoning == "r"
+    assert result.evidences is None
+
+    results = sg.batch_validate(["a", "b"], ai_service_description="desc", output_fields=["scope_class"])
+    assert seen["call"]["output_fields"] == ("scope_class",)
+    assert len(results) == 2
