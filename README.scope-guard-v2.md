@@ -16,9 +16,11 @@ ScopeGuard V2 is the next generation of [ScopeGuard](README.scope-guard.md). Giv
 
 On top of the classification, ScopeGuard V2 returns:
 
-* **`evidences`**: verbatim spans from the AI service description supporting the decision (optional, can be skipped for lower latency)
+* **`evidences`**: verbatim spans from the AI service description supporting the decision
 * **`reasoning`**: a short explanation of why the class was chosen
 * **`suggested_response`**: a ready-to-use response for the user when the query should not be processed (e.g., for Predefined Answer, Human Oversight, Out of Scope, Restricted, or Chit Chat)
+
+All three are optional: you choose which ones the model emits per guard or per call (see [Output Fields](#output-fields)). `scope_class` is always returned.
 
 > [!IMPORTANT]
 > **Model availability**: The ScopeGuard V2 models are currently **private** and accessible **only via API** through Principled Intelligence's hosted service. An open-weight release will follow.
@@ -144,6 +146,49 @@ result = sg.validate(user_query, ai_service_description=ai_service_description)
 * **`escalation_criteria`** powers the **Human Oversight** class: when a criterion is met, the query is flagged for human review.
 * **`constraints`** powers the **Restricted** class.
 
+#### Writing escalation criteria that do not over-trigger
+
+ScopeGuard V2 has high recall on escalation terms, and pays for it with false positives: a
+criterion like *"the parcel is lost or damaged"* will also fire on *"in general, what happens
+when a parcel is damaged?"*, *"what would happen if mine were damaged?"*, and *"it seemed
+damaged but I checked and it was fine"*. Two changes to the description reduce this
+markedly, measured on the 4B and 9B models over a small adversarial probe:
+
+1. **Give the informational version of the topic a home.** For every escalation criterion,
+   add the matching *explain-what-happens* functionality. The model then has a legitimate
+   supported class for general and hypothetical questions instead of choosing between
+   escalating and refusing.
+2. **Qualify the criterion itself** as a real, current event about the user's own case.
+
+```python
+ai_service_description = AIServiceDescriptionV2(
+    ...,
+    functionalities=[
+        "Track packages by tracking number",
+        "Provide expected delivery dates",
+        # 1. the informational counterpart of the escalation criterion below
+        "Explain in general what happens and which procedures apply when a package is lost or damaged",
+    ],
+    escalation_criteria=[
+        # 2. real, current, the user's own package -- not hypotheticals, third parties, or resolved cases
+        "The user reports that their own package is currently lost or damaged (a real, ongoing event; "
+        "not general or hypothetical questions, not cases about other people, not already-resolved issues)",
+        "The user threatens legal action",
+    ],
+)
+```
+
+With both changes, general and hypothetical questions moved from `Human Oversight` to
+`Directly Supported` on both models (0 of 8 samples escalating, from 5–7 of 8 on the 4B),
+while a genuine report of a damaged package with a legal threat stayed `Human Oversight` in
+8 of 8 samples under every variant tried. Change 1 is the larger effect and the better
+outcome for users, since change 2 alone tends to send such questions to `Out of Scope`.
+
+Two shapes are **not** fixed by description wording and need the model itself to improve:
+third-person and hearsay mentions (*"a friend of mine received a damaged package"*) and
+negated mentions (*"my package is not destroyed"*). Expect escalation on those regardless
+of how the criterion is written.
+
 ### Input Formats
 
 The `validate` method accepts the same input formats as ScopeGuard V1:
@@ -174,20 +219,38 @@ result = sg.validate(
 
 With multi-turn conversations, the scope decision is computed exclusively for **the final user message**, with earlier turns considered only as conversational context.
 
-### Skipping Evidences
+### Output Fields
 
-If you don't need the supporting evidences, you can skip them to reduce latency and token usage, either per guard or per call:
+You can choose which fields the model emits, either per guard or per call. `scope_class` is always included; `evidences`, `reasoning`, and `suggested_response` are optional. Fewer fields mean fewer generated tokens and lower latency, and never change the class the model would have chosen.
 
 ```python
-sg = ScopeGuardV2(backend="api", api_key="principled_1234", skip_evidences=True)
+# per guard
+sg = ScopeGuardV2(backend="api", api_key="principled_1234", output_fields=["scope_class"])
 
-# or per call
+# per call
 result = sg.validate(
     user_query,
     ai_service_description=ai_service_description,
-    skip_evidences=True,
+    output_fields=["reasoning", "scope_class"],
 )
+
+print(result.scope_class)      # always present
+print(result.reasoning)        # present when requested, otherwise None
+print(result.evidences)        # None -- not requested
 ```
+
+Fields you did not request come back as `None` on the result object.
+
+> [!TIP]
+> On our benchmarks the `scope_class`-only mode is both the cheapest and the most accurate. Request `reasoning`, `evidences`, or `suggested_response` when you need them for your product, not to improve the classification.
+
+The pre-existing `skip_evidences` flag keeps working and means "every field except `evidences`":
+
+```python
+sg = ScopeGuardV2(backend="api", api_key="principled_1234", skip_evidences=True)
+```
+
+If you pass both `output_fields` and `skip_evidences` and they disagree, `output_fields` wins and a `DeprecationWarning` is emitted.
 
 ### Default Safety Principles
 
@@ -228,6 +291,9 @@ results = sg.batch_validate(queries, ai_service_descriptions=[desc_1, desc_2])
 ## Self-hosting
 
 The library already ships the `vllm`, `hf`, and serving backends for ScopeGuard V2 (`orbitals scope-guard-v2 serve`), but they require access to the model weights, which are **private for the moment**. Once the open-weight models are released, self-hosting will work exactly as it does for [ScopeGuard V1](README.scope-guard.md#serving-scopeguard-on-premise-or-on-your-infrastructure).
+
+> [!IMPORTANT]
+> Since `orbitals` 0.5.0 the `vllm`, `vllm-api`, and `hf` backends use the prompt the **2608 "promptfix"** models were trained on. Self-hosting an older ScopeGuard V2 checkpoint with this version of the library will degrade its classifications. The `api` backend is unaffected. When the model directory ships a `system_prompt.txt`, the `vllm` backend logs a warning if it does not match.
 
 If you need on-premise deployment earlier, contact us at [orbitals@principled-intelligence.com](mailto:orbitals@principled-intelligence.com).
 

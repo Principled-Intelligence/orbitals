@@ -54,7 +54,7 @@ class ScopeClass(str, Enum):
 
 _SCOPE_DESCRIPTIONS = {
     ScopeClass.DIRECTLY_SUPPORTED: "The query is clearly within the scope of the AI service. The AI service can and should handle this type of request.",
-    ScopeClass.POTENTIALLY_SUPPORTED: "The query is plausibly within the scope of the AI service. In most situations, it's generally safe for the AI service to handle this, but may require careful consideration.",
+    ScopeClass.POTENTIALLY_SUPPORTED: "The query is adjacent to the service's stated functionalities or knowledge scope without being named by any of them, and no constraint, escalation criterion, or predefined response applies to it. Use it only when the service could handle the request as a reasonable extension of what it already does -- never as a way to avoid committing to a clearer class.",
     ScopeClass.PREDEFINED_ANSWER: "The query matches a predefined scenario or FAQ that has a specific, pre-written response. Use the exact predefined response.",
     ScopeClass.HUMAN_OVERSIGHT: "The query requires human oversight, judgment, or expertise. This could be due to complexity, sensitivity, legal implications, or escalation criteria being met.",
     ScopeClass.OUT_OF_SCOPE: "The query is outside the scope of the AI service and its responsibilities. The AI service should not process this type of request.",
@@ -74,8 +74,12 @@ class ScopeGuardV2Output(BaseModel):
         default=None,
         description="Evidences from the AI Service Description supporting this classification.",
     )
-    reasoning: str = Field(
-        description="A short explanation of why this classification was chosen."
+    reasoning: str | None = Field(
+        default=None,
+        description=(
+            "A short explanation of why this classification was chosen. None only "
+            "when the caller requested an output-field selection without `reasoning`."
+        ),
     )
     scope_class: ScopeClass = Field(
         description="The scope classification (must be one of the defined scope classes)."
