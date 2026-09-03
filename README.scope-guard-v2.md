@@ -146,6 +146,49 @@ result = sg.validate(user_query, ai_service_description=ai_service_description)
 * **`escalation_criteria`** powers the **Human Oversight** class: when a criterion is met, the query is flagged for human review.
 * **`constraints`** powers the **Restricted** class.
 
+#### Writing escalation criteria that do not over-trigger
+
+ScopeGuard V2 has high recall on escalation terms, and pays for it with false positives: a
+criterion like *"the parcel is lost or damaged"* will also fire on *"in general, what happens
+when a parcel is damaged?"*, *"what would happen if mine were damaged?"*, and *"it seemed
+damaged but I checked and it was fine"*. Two changes to the description reduce this
+markedly, measured on the 4B and 9B models over a small adversarial probe:
+
+1. **Give the informational version of the topic a home.** For every escalation criterion,
+   add the matching *explain-what-happens* functionality. The model then has a legitimate
+   supported class for general and hypothetical questions instead of choosing between
+   escalating and refusing.
+2. **Qualify the criterion itself** as a real, current event about the user's own case.
+
+```python
+ai_service_description = AIServiceDescriptionV2(
+    ...,
+    functionalities=[
+        "Track packages by tracking number",
+        "Provide expected delivery dates",
+        # 1. the informational counterpart of the escalation criterion below
+        "Explain in general what happens and which procedures apply when a package is lost or damaged",
+    ],
+    escalation_criteria=[
+        # 2. real, current, the user's own package -- not hypotheticals, third parties, or resolved cases
+        "The user reports that their own package is currently lost or damaged (a real, ongoing event; "
+        "not general or hypothetical questions, not cases about other people, not already-resolved issues)",
+        "The user threatens legal action",
+    ],
+)
+```
+
+With both changes, general and hypothetical questions moved from `Human Oversight` to
+`Directly Supported` on both models (0 of 8 samples escalating, from 5–7 of 8 on the 4B),
+while a genuine report of a damaged package with a legal threat stayed `Human Oversight` in
+8 of 8 samples under every variant tried. Change 1 is the larger effect and the better
+outcome for users, since change 2 alone tends to send such questions to `Out of Scope`.
+
+Two shapes are **not** fixed by description wording and need the model itself to improve:
+third-person and hearsay mentions (*"a friend of mine received a damaged package"*) and
+negated mentions (*"my package is not destroyed"*). Expect escalation on those regardless
+of how the criterion is written.
+
 ### Input Formats
 
 The `validate` method accepts the same input formats as ScopeGuard V1:
