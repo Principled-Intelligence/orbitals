@@ -608,3 +608,66 @@ def test_build_prompt_prefill_uses_the_selections_first_key():
         _Tok(), "hello", "desc", prefill=True, output_fields=["scope_class"]
     ).endswith('{"scope_class":')
     assert build_prompt(_Tok(), "hello", "desc") == "<prompt>"
+
+
+# --- base guard resolution --------------------------------------------------
+
+
+def _stub_guard(**ctor):
+    """A ScopeGuardV2 with no backend, exposing what _batch_validate received."""
+    from orbitals.scope_guard_v2 import ScopeClass, ScopeGuardV2, ScopeGuardV2Output
+    from orbitals.scope_guard_v2.guards.base import BaseScopeGuardV2
+
+    class _Stub(ScopeGuardV2):
+        def __new__(cls, *args, **kwargs):
+            return BaseScopeGuardV2.__new__(cls)
+
+        def __init__(self, **kwargs):
+            super().__init__("stub", **kwargs)
+            self.seen: list[tuple[str, ...]] = []
+
+        def _validate(self, conversation, **kwargs):
+            # every real backend delegates single to batch; the stub does too
+            return self._batch_validate([conversation], **kwargs)[0]
+
+        def _batch_validate(self, conversations, *, skip_evidences=None, output_fields=None, **kwargs):
+            selection = self._resolve_output_fields(output_fields, skip_evidences)
+            self.seen.append(selection)
+            return [
+                ScopeGuardV2Output(scope_class=ScopeClass.CHIT_CHAT, model="stub")
+                for _ in conversations
+            ]
+
+    return _Stub(**ctor)
+
+
+def test_base_guard_resolution_order():
+    all_four = ("evidences", "reasoning", "scope_class", "suggested_response")
+    no_evid = ("reasoning", "scope_class", "suggested_response")
+
+    g = _stub_guard()
+    g.validate("q", ai_service_description="d")
+    assert g.seen[-1] == all_four  # nothing anywhere -> all fields
+
+    g = _stub_guard(skip_evidences=True)
+    g.validate("q", ai_service_description="d")
+    assert g.seen[-1] == no_evid  # constructor skip_evidences
+    g.validate("q", ai_service_description="d", skip_evidences=False)
+    assert g.seen[-1] == all_four  # per-call skip_evidences overrides constructor
+    g.validate("q", ai_service_description="d", output_fields=["scope_class"])
+    assert g.seen[-1] == ("scope_class",)  # per-call output_fields overrides everything
+
+    g = _stub_guard(output_fields=["reasoning", "scope_class"])
+    g.validate("q", ai_service_description="d")
+    assert g.seen[-1] == ("reasoning", "scope_class")  # constructor output_fields
+    g.validate("q", ai_service_description="d", skip_evidences=True)
+    assert g.seen[-1] == no_evid  # per-call skip_evidences beats constructor output_fields
+    g.batch_validate(["a", "b"], ai_service_description="d", output_fields=["scope_class"])
+    assert g.seen[-1] == ("scope_class",)
+
+
+def test_base_guard_constructor_conflict_warns_once_at_construction():
+    with pytest.warns(DeprecationWarning, match="output_fields"):
+        g = _stub_guard(output_fields=["evidences", "scope_class"], skip_evidences=True)
+    g.validate("q", ai_service_description="d")
+    assert g.seen[-1] == ("evidences", "scope_class")

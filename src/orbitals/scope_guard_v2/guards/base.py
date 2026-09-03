@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Iterable, Literal, Sequence, overload
 
 from pydantic import ValidationError
 
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from .vllm import AsyncVLLMApiScopeGuardV2, VLLMScopeGuardV2
 
 from ...types import AIServiceDescriptionV2
+from ..prompting import ALL_FIELDS, resolve_selection
 from ..modeling import (
     ScopeGuardV2Input,
     ScopeGuardV2InputTypeAdapter,
@@ -65,10 +66,37 @@ class BaseScopeGuardV2:
         backend: str,
         *args,
         include_default_safety_principles: bool = False,
+        skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         **kwargs,
     ):
         self.backend = backend
         self.include_default_safety_principles = include_default_safety_principles
+        # Resolved once here so a conflicting constructor pair warns at
+        # construction, not on every call.
+        self.skip_evidences = skip_evidences
+        self.output_fields: tuple[str, ...] | None = resolve_selection(
+            output_fields, skip_evidences
+        )
+
+    def _resolve_output_fields(
+        self,
+        output_fields: Iterable[str] | None,
+        skip_evidences: bool | None,
+    ) -> tuple[str, ...]:
+        """The effective field selection for one call.
+
+        Per-call arguments win over constructor arguments; within a level
+        `output_fields` wins over `skip_evidences` (see `resolve_selection`).
+        Falls back to all four fields, which is what every caller got before
+        selections existed.
+        """
+        per_call = resolve_selection(output_fields, skip_evidences)
+        if per_call is not None:
+            return per_call
+        if self.output_fields is not None:
+            return self.output_fields
+        return ALL_FIELDS
 
     def _resolve_include_default_safety_principles(
         self, per_call_value: bool | None
@@ -152,6 +180,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
         backend: Literal["vllm"],
         model: str,
         skip_evidences: bool = False,
+        output_fields: Sequence[str] | None = None,
         temperature: float = 0.0,
         max_tokens: int = 3000,
         max_model_len: int = 30_000,
@@ -166,6 +195,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
         backend: Literal["hf"],
         model: str,
         skip_evidences: bool = False,
+        output_fields: Sequence[str] | None = None,
         max_new_tokens: int = 3000,
         do_sample: bool = False,
         include_default_safety_principles: bool = False,
@@ -180,6 +210,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
+        output_fields: Sequence[str] | None = None,
         custom_headers: dict[str, str] | None = None,
         include_default_safety_principles: bool = False,
     ) -> APIScopeGuardV2: ...
@@ -193,6 +224,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
         *,
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> ScopeGuardV2Output:
@@ -205,6 +237,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
             conversation,
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
+            output_fields=output_fields,
             **kwargs,
         )
 
@@ -214,6 +247,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
         *,
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         **kwargs,
     ) -> ScopeGuardV2Output:
         raise NotImplementedError
@@ -225,6 +259,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2 | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
@@ -249,6 +284,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
             ai_service_description=ai_service_description,
             ai_service_descriptions=ai_service_descriptions,
             skip_evidences=skip_evidences,
+            output_fields=output_fields,
             **kwargs,
         )
 
@@ -259,6 +295,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2 | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
         raise NotImplementedError
@@ -271,6 +308,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         backend: Literal["vllm-api"],
         model: str,
         skip_evidences: bool = False,
+        output_fields: Sequence[str] | None = None,
         vllm_serving_url: str = "http://localhost:8000",
         temperature: float = 0.0,
         max_tokens: int = 3000,
@@ -287,6 +325,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
         skip_evidences: bool = False,
+        output_fields: Sequence[str] | None = None,
         custom_headers: dict[str, str] | None = None,
         include_default_safety_principles: bool = False,
     ) -> AsyncAPIScopeGuardV2: ...
@@ -300,6 +339,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         *,
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> ScopeGuardV2Output:
@@ -312,6 +352,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
             conversation,
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
+            output_fields=output_fields,
             **kwargs,
         )
 
@@ -321,6 +362,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         *,
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         **kwargs,
     ) -> ScopeGuardV2Output:
         raise NotImplementedError
@@ -332,6 +374,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2 | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
@@ -356,6 +399,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
             ai_service_description=ai_service_description,
             ai_service_descriptions=ai_service_descriptions,
             skip_evidences=skip_evidences,
+            output_fields=output_fields,
             **kwargs,
         )
 
@@ -366,6 +410,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2 | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
         raise NotImplementedError
