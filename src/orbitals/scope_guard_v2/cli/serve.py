@@ -28,6 +28,14 @@ def setup_fastapi_logging():
 def serve(
     vllm_model: str = typer.Argument(..., help="The model used for vLLM serving"),
     skip_evidences: bool = typer.Option(False, help="Whether to skip evidences"),
+    output_fields: str | None = typer.Option(
+        None,
+        help=(
+            "Comma-separated output fields the model should emit, e.g. "
+            "'reasoning,scope_class'. scope_class is always included. "
+            "Overrides --skip-evidences."
+        ),
+    ),
     port: int = typer.Option(
         8000, "-p", "--port", help="The port to use for the server"
     ),
@@ -53,6 +61,7 @@ def serve(
     os.environ["SCOPE_GUARD_V2_SKIP_EVIDENCES"] = (
         str(1) if skip_evidences else str(0)
     )
+    os.environ["SCOPE_GUARD_V2_OUTPUT_FIELDS"] = output_fields or ""
 
     vllm_logging_config = (
         Path(__file__).parent.parent / "serving" / "vllm_logging_config.json"

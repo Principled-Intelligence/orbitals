@@ -853,3 +853,55 @@ def test_api_parse_output_tolerates_missing_reasoning():
     out = _parse_output({"scope_class": "Chit Chat", "model": "m"})
     assert out.reasoning is None
     assert out.scope_class == "Chit Chat"
+
+
+# --- serving ------------------------------------------------------------------
+
+
+def test_scope_guard_v2_serving_forwards_output_fields_and_allows_null_reasoning(monkeypatch):
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_MODEL", "v2-model")
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_SERVING_URL", "http://localhost:8001")
+    monkeypatch.setenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", "0")
+    monkeypatch.setenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", "")
+
+    from fastapi.testclient import TestClient
+
+    from orbitals.scope_guard_v2 import ScopeClass, ScopeGuardV2Output
+    from orbitals.scope_guard_v2.serving import main as serving_main
+
+    seen: dict[str, Any] = {}
+
+    class _StubAsyncGuard:
+        async def validate(self, conversation, *, ai_service_description, **kwargs):
+            seen.update(kwargs)
+            return ScopeGuardV2Output(
+                scope_class=ScopeClass.OUT_OF_SCOPE,
+                model="stub-model",
+                usage=LLMUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+            )
+
+    with TestClient(serving_main.app) as client:
+        monkeypatch.setattr(serving_main, "scope_guard", _StubAsyncGuard())
+        response = client.post(
+            "/orbitals/scope-guard-v2/validate",
+            json={
+                "conversation": "hello",
+                "ai_service_description": "desc",
+                "output_fields": ["scope_class"],
+            },
+        )
+
+    assert response.status_code == 200
+    assert seen["output_fields"] == ["scope_class"]
+    body = response.json()
+    assert body["scope_class"] == "Out of Scope"
+    assert body["reasoning"] is None
+
+
+def test_scope_guard_v2_serve_cli_exposes_output_fields():
+    from orbitals.cli.main import app
+
+    result = CliRunner().invoke(app, ["scope-guard-v2", "serve", "--help"])
+    assert result.exit_code == 0
+    assert "--output-fields" in result.stdout
+    assert "--skip-evidences" in result.stdout
