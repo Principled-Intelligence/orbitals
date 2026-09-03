@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 from ...types import AIServiceDescriptionV2, LLMUsage
 from ..modeling import ScopeGuardV2Input, ScopeGuardV2Output
-from ..prompting import SYSTEM_PROMPT, ScopeGuardV2ResponseModel, build_prompt
+from ..prompting import ALL_FIELDS, SYSTEM_PROMPT, build_prompt, response_model_for
 from .base import AsyncScopeGuardV2, ScopeGuardV2
 
 
@@ -121,7 +121,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         for output in outputs:
             text = output.outputs[0].text
             parsed_obj = json.loads(text)
-            validated_obj = ScopeGuardV2ResponseModel.model_validate(parsed_obj)
+            validated_obj = response_model_for(ALL_FIELDS).model_validate(parsed_obj)
             results.append(
                 ScopeGuardV2Output(
                     evidences=validated_obj.evidences,
@@ -206,7 +206,7 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
                     "temperature": self.vllm_temperature,
                     "max_tokens": self.vllm_max_tokens,
                     "structured_outputs": {
-                        "json": ScopeGuardV2ResponseModel.model_json_schema()
+                        "json": response_model_for(ALL_FIELDS).model_json_schema()
                     },
                 },
                 headers={"Content-Type": "application/json"},
@@ -224,7 +224,7 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
             raise ValueError(f"Failed to parse generated text: {response_json}")
 
         try:
-            validated_obj = ScopeGuardV2ResponseModel.model_validate(parsed_obj)
+            validated_obj = response_model_for(ALL_FIELDS).model_validate(parsed_obj)
         except pydantic.ValidationError as e:
             raise ValueError(f"Failed to validate generated text: {e}")
 

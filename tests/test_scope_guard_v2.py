@@ -394,3 +394,142 @@ def test_scope_guard_v2_cli_help_and_model_passthrough():
     )
     assert model_result.exit_code == 0
     assert "scope-guard-q" in model_result.stdout
+
+
+# --- output fields: selector helpers and the pinned prompt -----------------
+
+
+def test_scope_guard_v2_system_prompt_is_byte_identical_to_training():
+    """The client prompt must be the bytes the 2608 models trained on.
+
+    A diverged system prompt degrades accuracy with no parse error to show for it,
+    so drift has to be a red test. The hash is of the trainer's
+    src/prompting.SYSTEM_PROMPT, trailing newline included (the chat template puts
+    <|im_end|> right after the content, so the newline is part of what the model
+    saw). Do NOT change this to 1f37419f...: that is the newline-stripped copy
+    unsafe-eval and the Hub system_prompt.txt carry.
+    """
+    import hashlib
+
+    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT
+
+    assert len(SYSTEM_PROMPT) == 7665
+    assert SYSTEM_PROMPT.endswith("\n")
+    assert (
+        hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+        == "f0f68e48096938b93c2c497386295ff7db2929b128e9dddea944ebb6578960b5"
+    )
+
+
+def test_scope_guard_v2_system_prompt_has_no_embedded_schema_or_skip_marker():
+    from orbitals.scope_guard_v2.prompting import SELECTOR_HEADER, SYSTEM_PROMPT
+
+    assert '"$defs"' not in SYSTEM_PROMPT
+    assert "SKIP EVIDENCES" not in SYSTEM_PROMPT
+    assert SELECTOR_HEADER in SYSTEM_PROMPT
+    assert "exactly those keys" in SYSTEM_PROMPT
+
+
+def test_normalize_selection_forces_scope_class_dedupes_and_reorders():
+    from orbitals.scope_guard_v2.prompting import ALL_FIELDS, normalize_selection
+
+    assert normalize_selection([]) == ("scope_class",)
+    assert normalize_selection(["scope_class", "reasoning"]) == (
+        "reasoning",
+        "scope_class",
+    )
+    assert normalize_selection(["reasoning", "reasoning", "evidences"]) == (
+        "evidences",
+        "reasoning",
+        "scope_class",
+    )
+    assert normalize_selection(reversed(ALL_FIELDS)) == ALL_FIELDS
+
+
+def test_normalize_selection_rejects_unknown_fields():
+    from orbitals.scope_guard_v2.prompting import normalize_selection
+
+    with pytest.raises(ValueError, match="unknown output field"):
+        normalize_selection(["scope_class", "confidence"])
+
+
+def test_render_selector_block_matches_the_trainer_for_all_eight_selections():
+    """Eight literal strings copied from the trainer's render_selector_block.
+
+    The user turn must be byte-identical to training, and this block is the part
+    of it the client composes itself.
+    """
+    from orbitals.scope_guard_v2.prompting import render_selector_block
+
+    expected = {
+        ("scope_class",): '**REQUESTED OUTPUT FIELDS**\n\n["scope_class"]',
+        ("evidences", "scope_class"): '**REQUESTED OUTPUT FIELDS**\n\n["evidences", "scope_class"]',
+        ("reasoning", "scope_class"): '**REQUESTED OUTPUT FIELDS**\n\n["reasoning", "scope_class"]',
+        ("evidences", "reasoning", "scope_class"): '**REQUESTED OUTPUT FIELDS**\n\n["evidences", "reasoning", "scope_class"]',
+        ("scope_class", "suggested_response"): '**REQUESTED OUTPUT FIELDS**\n\n["scope_class", "suggested_response"]',
+        ("evidences", "scope_class", "suggested_response"): '**REQUESTED OUTPUT FIELDS**\n\n["evidences", "scope_class", "suggested_response"]',
+        ("reasoning", "scope_class", "suggested_response"): '**REQUESTED OUTPUT FIELDS**\n\n["reasoning", "scope_class", "suggested_response"]',
+        ("evidences", "reasoning", "scope_class", "suggested_response"): '**REQUESTED OUTPUT FIELDS**\n\n["evidences", "reasoning", "scope_class", "suggested_response"]',
+    }
+    for selection, block in expected.items():
+        assert render_selector_block(selection) == block, selection
+    # order-insensitive on input
+    assert render_selector_block(["suggested_response", "scope_class", "evidences"]) == (
+        expected[("evidences", "scope_class", "suggested_response")]
+    )
+
+
+def test_potentially_supported_description_is_the_promptfix_text():
+    from orbitals.scope_guard_v2 import ScopeClass
+
+    desc = ScopeClass.POTENTIALLY_SUPPORTED.description
+    assert desc.startswith("The query is adjacent to the service's stated functionalities")
+    assert "never as a way to avoid committing to a clearer class" in desc
+
+
+# --- per-selection response model -----------------------------------------
+
+
+def test_response_model_for_requires_exactly_the_selected_keys():
+    from orbitals.scope_guard_v2.prompting import response_model_for
+
+    model = response_model_for(["scope_class"])
+    parsed = model.model_validate({"scope_class": "Restricted"})
+    assert parsed.scope_class == "Restricted"
+
+    with pytest.raises(ValidationError):  # unrequested key is forbidden
+        model.model_validate({"scope_class": "Restricted", "reasoning": "because"})
+
+    full = response_model_for(["evidences", "reasoning", "scope_class", "suggested_response"])
+    with pytest.raises(ValidationError):  # requested key is required, even if nullable
+        full.model_validate({"reasoning": "r", "scope_class": "Restricted", "suggested_response": None})
+    ok = full.model_validate(
+        {"evidences": None, "reasoning": "r", "scope_class": "Restricted", "suggested_response": None}
+    )
+    assert ok.evidences is None
+
+
+def test_response_model_for_is_cached_per_normalized_selection():
+    from orbitals.scope_guard_v2.prompting import response_model_for
+
+    a = response_model_for(["reasoning", "scope_class"])
+    b = response_model_for(["scope_class", "reasoning", "reasoning"])
+    assert a is b
+
+
+def test_response_model_for_schema_lists_only_selected_properties():
+    from orbitals.scope_guard_v2.prompting import response_model_for
+
+    schema = response_model_for(["reasoning", "scope_class"]).model_json_schema()
+    assert list(schema["properties"]) == ["reasoning", "scope_class"]
+    assert set(schema["required"]) == {"reasoning", "scope_class"}
+    assert schema.get("additionalProperties") is False
+
+
+def test_scope_guard_v2_output_reasoning_is_optional():
+    from orbitals.scope_guard_v2 import ScopeClass, ScopeGuardV2Output
+
+    out = ScopeGuardV2Output(scope_class=ScopeClass.CHIT_CHAT, model="m")
+    assert out.reasoning is None
+    assert out.evidences is None
+    assert out.suggested_response is None

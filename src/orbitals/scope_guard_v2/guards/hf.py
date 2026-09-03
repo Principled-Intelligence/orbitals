@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 from ...types import AIServiceDescriptionV2
 from ..modeling import ScopeGuardV2Input, ScopeGuardV2Output
-from ..prompting import ScopeGuardV2ResponseModel
+from ..prompting import ALL_FIELDS, response_model_for
 from .base import ScopeGuardV2
 
 
@@ -68,7 +68,7 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
             raise ValueError(f"Failed to parse generated text: {generated_text}")
 
         try:
-            validated_obj = ScopeGuardV2ResponseModel.model_validate(parsed_obj)
+            validated_obj = response_model_for(ALL_FIELDS).model_validate(parsed_obj)
         except pydantic.ValidationError as e:
             raise ValueError(f"Failed to validate generated text: {e}")
 
@@ -109,7 +109,7 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
         results = []
         for pipeline_output in pipeline_outputs:
             parsed_obj = json.loads(pipeline_output[0]["generated_text"])
-            validated_obj = ScopeGuardV2ResponseModel.model_validate(parsed_obj)
+            validated_obj = response_model_for(ALL_FIELDS).model_validate(parsed_obj)
             results.append(
                 ScopeGuardV2Output(
                     evidences=validated_obj.evidences,
