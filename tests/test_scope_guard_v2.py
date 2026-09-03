@@ -809,3 +809,47 @@ def test_hf_backend_passes_selection_to_the_pipeline_and_accepts_partial_output(
     results = sg.batch_validate(["a", "b"], ai_service_description="desc", output_fields=["scope_class"])
     assert seen["call"]["output_fields"] == ("scope_class",)
     assert len(results) == 2
+
+
+# --- api backend wire format ---------------------------------------------------
+
+
+def test_api_backend_body_is_unchanged_when_output_fields_not_used(mocked_v2_post):
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    sg = ScopeGuardV2(backend="api", api_url="http://example.com")
+    sg.validate("hello", ai_service_description="desc")
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["skip_evidences"] is False
+    assert "output_fields" not in body
+
+    sg = ScopeGuardV2(backend="api", api_url="http://example.com", skip_evidences=True)
+    sg.validate("hello", ai_service_description="desc", skip_evidences=False)
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["skip_evidences"] is False
+    assert "output_fields" not in body
+    sg.validate("hello", ai_service_description="desc")
+    assert mocked_v2_post.call_args.kwargs["json"]["skip_evidences"] is True
+
+
+def test_api_backend_body_carries_explicit_output_fields(mocked_v2_post):
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    sg = ScopeGuardV2(backend="api", api_url="http://example.com", output_fields=["scope_class"])
+    sg.validate("hello", ai_service_description="desc")
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["output_fields"] == ["scope_class"]
+    assert body["skip_evidences"] is True  # derived, so an older server still narrows
+
+    mocked_v2_post.return_value.json.return_value = [_response_payload()]  # batch shape
+    sg.batch_validate(["a"], ai_service_description="desc", output_fields=["reasoning", "scope_class"])
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["output_fields"] == ["reasoning", "scope_class"]
+
+
+def test_api_parse_output_tolerates_missing_reasoning():
+    from orbitals.scope_guard_v2.guards.api import _parse_output
+
+    out = _parse_output({"scope_class": "Chit Chat", "model": "m"})
+    assert out.reasoning is None
+    assert out.scope_class == "Chit Chat"
