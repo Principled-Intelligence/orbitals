@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
-import logging
 from functools import lru_cache
-from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Literal
 
 import aiohttp
@@ -17,10 +14,13 @@ if TYPE_CHECKING:
 
 from ...types import AIServiceDescriptionV2, LLMUsage
 from ..modeling import ScopeGuardV2Input, ScopeGuardV2Output
-from ..prompting import SYSTEM_PROMPT, build_prompt, response_model_for
+from ..prompting import (
+    SYSTEM_PROMPT,
+    build_prompt,
+    check_shipped_system_prompt,
+    response_model_for,
+)
 from .base import AsyncScopeGuardV2, ScopeGuardV2
-
-logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=8)
@@ -28,35 +28,6 @@ def _get_tokenizer(model_name: str) -> transformers.PreTrainedTokenizer:
     import transformers
 
     return transformers.AutoTokenizer.from_pretrained(model_name)
-
-
-def check_shipped_system_prompt(model_path: str) -> None:
-    """Warn if the model directory ships a system prompt that is not ours.
-
-    The 2608 releases include `system_prompt.txt`. The library never reads it to
-    build prompts -- the built-in `SYSTEM_PROMPT` is the source of truth -- but a
-    mismatch means the model was trained on a different prompt generation and will
-    degrade quietly. Trailing newlines are ignored: the shipped copies are known to
-    lack the one the model trained with, and that alone is not worth a warning.
-
-    Args:
-        model_path: A local model directory. Hub ids and missing files are ignored.
-    """
-    path = Path(model_path) / "system_prompt.txt"
-    if not path.is_file():
-        return
-    shipped = path.read_text(encoding="utf-8").rstrip("\n")
-    ours = SYSTEM_PROMPT.rstrip("\n")
-    if shipped == ours:
-        return
-    logger.warning(
-        "system_prompt.txt in %s (sha256 %s) differs from the prompt this library "
-        "was built for (sha256 %s). The model was likely trained on a different "
-        "prompt generation; classifications may be degraded.",
-        model_path,
-        hashlib.sha256(shipped.encode("utf-8")).hexdigest()[:8],
-        hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:8],
-    )
 
 
 def _to_output(
@@ -202,6 +173,10 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
             if chat_templating_tokenizer is not None
             else self.default_model_name
         )
+        # The model, not the tokenizer: when a separate chat-templating tokenizer
+        # is configured they are different repos, and the training prompt that
+        # matters belongs to the model.
+        check_shipped_system_prompt(self.default_model_name)
         self.vllm_serving_url = vllm_serving_url
         self.vllm_temperature = temperature
         self.vllm_max_tokens = max_tokens

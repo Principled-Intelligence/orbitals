@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 from ...types import AIServiceDescriptionV2
 from ..modeling import ScopeGuardV2Input, ScopeGuardV2Output
-from ..prompting import response_model_for
+from ..prompting import check_shipped_system_prompt, response_model_for
 from .base import ScopeGuardV2
 
 
@@ -60,6 +60,7 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
         if model is None:
             raise ValueError("A model name must be provided for ScopeGuardV2.")
         self.model = model
+        check_shipped_system_prompt(self.model)
         self._pipeline = pipeline(
             task="scope-guard-v2",
             model=self.model,

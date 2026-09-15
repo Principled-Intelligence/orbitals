@@ -295,7 +295,7 @@ results = sg.batch_validate(queries, ai_service_descriptions=[desc_1, desc_2])
 The library already ships the `vllm`, `hf`, and serving backends for ScopeGuard V2 (`orbitals scope-guard-v2 serve`), but they require access to the model weights, which are **private for the moment**. Once the open-weight models are released, self-hosting will work exactly as it does for [ScopeGuard V1](README.scope-guard.md#serving-scopeguard-on-premise-or-on-your-infrastructure).
 
 > [!IMPORTANT]
-> Since `orbitals` 0.5.0 the `vllm`, `vllm-api`, and `hf` backends use the prompt the **2608 "promptfix"** models were trained on. Self-hosting an older ScopeGuard V2 checkpoint with this version of the library will degrade its classifications. The `api` backend is unaffected. When the model directory ships a `system_prompt.txt`, the `vllm` backend logs a warning if it does not match.
+> Since `orbitals` 0.5.0 the `vllm`, `vllm-api`, and `hf` backends use the prompt the **2608 "promptfix"** models were trained on. Self-hosting an older ScopeGuard V2 checkpoint with this version of the library will degrade its classifications. The `api` backend is unaffected. When the model ships a `system_prompt.txt`, the other three log a warning if it does not match, whether you point them at a local directory or an HF Hub id.
 
 If you need on-premise deployment earlier, contact us at [orbitals@principled-intelligence.com](mailto:orbitals@principled-intelligence.com).
 

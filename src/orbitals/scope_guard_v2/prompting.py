@@ -14,9 +14,12 @@ eight literal strings is what catches the rendering half of that.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import warnings
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
@@ -28,6 +31,8 @@ from .modeling import (
     ScopeGuardV2Input,
     ScopeGuardV2InputTypeAdapter,
 )
+
+logger = logging.getLogger(__name__)
 
 SCOPE_CLASS = "scope_class"
 
@@ -211,6 +216,102 @@ Field types:
 - "scope_class": string, exactly one of the scope class names listed above
 - "suggested_response": string with a brief response for the user (when scope_class is "Predefined Answer", "Human Oversight", "Out of Scope", "Restricted", or "Chit Chat"), or null otherwise
 """
+
+
+_PROMPT_FILENAME = "system_prompt.txt"
+
+
+def _hub_system_prompt_path(model_ref: str) -> str | None:
+    """Locate `system_prompt.txt` for an HF Hub repo id, from the cache or by download.
+
+    Args:
+        model_ref: An HF Hub repo id. Anything else resolves to None.
+
+    Returns:
+        A local path to the shipped file, or None if the repo does not have one or
+        could not be reached.
+    """
+    try:
+        import huggingface_hub
+
+        cached = huggingface_hub.try_to_load_from_cache(
+            repo_id=model_ref, filename=_PROMPT_FILENAME
+        )
+        if isinstance(cached, str):
+            return cached
+        if cached is not None:
+            # The private "known to be absent" sentinel, recognised by shape so the
+            # private name never has to be imported. No point paying for a download.
+            return None
+        return huggingface_hub.hf_hub_download(
+            repo_id=model_ref, filename=_PROMPT_FILENAME
+        )
+    except Exception:
+        # Not a repo id, private repo, no auth, offline, DNS, huggingface_hub not
+        # installed. The check is advisory and must never break construction, so
+        # every one of these is a quiet miss.
+        logger.debug(
+            "could not resolve %s for %s", _PROMPT_FILENAME, model_ref, exc_info=True
+        )
+        return None
+
+
+def _read_shipped_system_prompt(model_ref: str) -> str | None:
+    """Read the prompt a model reference ships, trying the cheapest source first.
+
+    Local directory off disk, then the HF Hub cache, then a small download for a cold
+    repo id. The download is worth paying for before the weights load: a warning
+    that arrives after a multi-minute model load has wasted the time it was meant
+    to save.
+
+    Args:
+        model_ref: A local model directory or an HF Hub repo id.
+
+    Returns:
+        The shipped prompt, or None if there is not one to compare against.
+    """
+    local = Path(model_ref) / _PROMPT_FILENAME
+    if local.is_file():
+        return local.read_text(encoding="utf-8")
+    if Path(model_ref).exists():
+        return None  # a reference that exists on disk is a path, never a repo id
+    hub_path = _hub_system_prompt_path(model_ref)
+    if hub_path is None:
+        return None
+    try:
+        return Path(hub_path).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def check_shipped_system_prompt(model_ref: str) -> None:
+    """Warn if the model ships a system prompt that is not ours.
+
+    The 2608 releases include `system_prompt.txt`. The library never reads it to
+    build prompts -- the built-in `SYSTEM_PROMPT` is the source of truth -- but a
+    mismatch means the model was trained on a different prompt generation and will
+    degrade quietly. Trailing newlines are ignored: some releases ship the prompt
+    with one and some without, and that alone is not worth a warning.
+
+    Args:
+        model_ref: A local model directory or an HF Hub repo id. A reference that ships
+            no prompt, or that cannot be resolved at all, is ignored.
+    """
+    shipped_text = _read_shipped_system_prompt(model_ref)
+    if shipped_text is None:
+        return
+    shipped = shipped_text.rstrip("\n")
+    ours = SYSTEM_PROMPT.rstrip("\n")
+    if shipped == ours:
+        return
+    logger.warning(
+        "system_prompt.txt in %s (sha256 %s) differs from the prompt this library "
+        "was built for (sha256 %s). The model was likely trained on a different "
+        "prompt generation; classifications may be degraded.",
+        model_ref,
+        hashlib.sha256(shipped.encode("utf-8")).hexdigest()[:8],
+        hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:8],
+    )
 
 
 LAST_MESSAGE_TAG = "LAST MESSAGE"

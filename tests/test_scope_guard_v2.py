@@ -721,12 +721,11 @@ def test_base_guard_constructor_conflict_warns_once_at_construction():
 def test_check_shipped_system_prompt_warns_only_on_real_drift(tmp_path, caplog):
     import logging
 
-    from orbitals.scope_guard_v2.guards.vllm import check_shipped_system_prompt
-    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT
+    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT, check_shipped_system_prompt
 
     # no file: silent
     check_shipped_system_prompt(str(tmp_path))
-    # same bytes minus trailing newline (what the Hub ships): silent
+    # same bytes minus trailing newline (what the HF Hub ships): silent
     (tmp_path / "system_prompt.txt").write_text(SYSTEM_PROMPT.rstrip("\n"), encoding="utf-8")
     with caplog.at_level(logging.WARNING):
         check_shipped_system_prompt(str(tmp_path))
@@ -735,7 +734,222 @@ def test_check_shipped_system_prompt_warns_only_on_real_drift(tmp_path, caplog):
     (tmp_path / "system_prompt.txt").write_text("You are a 2606 classifier.", encoding="utf-8")
     with caplog.at_level(logging.WARNING):
         check_shipped_system_prompt(str(tmp_path))
-    assert any("system_prompt.txt" in r.message and "f0f68e48" in r.message for r in caplog.records)
+    assert any(
+        "system_prompt.txt" in r.getMessage() and "f0f68e48" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def _shipped_prompt_file(tmp_path, text):
+    path = tmp_path / "system_prompt.txt"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+def test_hub_id_prompt_is_resolved_from_the_cache(tmp_path, caplog, monkeypatch):
+    """An HF Hub id is the documented call shape, so drift must be caught for it too."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import check_shipped_system_prompt
+
+    cached = _shipped_prompt_file(tmp_path, "You are a 2606 classifier.")
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda **kw: cached)
+
+    repo = "org/scope-guard-v2"
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt(repo)
+    assert any(repo in r.getMessage() and "f0f68e48" in r.getMessage() for r in caplog.records)
+
+
+def test_hub_id_whose_prompt_matches_stays_silent(tmp_path, caplog, monkeypatch):
+    """Some releases ship the prompt without the trailing newline; that is not drift."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT, check_shipped_system_prompt
+
+    cached = _shipped_prompt_file(tmp_path, SYSTEM_PROMPT.rstrip("\n"))
+    seen = []
+
+    def _cache(**kwargs):
+        seen.append(kwargs)
+        return cached
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", _cache)
+
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt("org/scope-guard-v2")
+    assert seen, "the HF Hub lookup was never attempted"
+    assert not caplog.records
+
+
+def test_cold_hub_id_downloads_the_prompt_file(tmp_path, caplog, monkeypatch):
+    """Not cached: one small download, paid before the weights load."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import check_shipped_system_prompt
+
+    downloaded = _shipped_prompt_file(tmp_path, "You are a 2606 classifier.")
+    calls = []
+
+    def _download(**kwargs):
+        calls.append(kwargs)
+        return downloaded
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda **kw: None)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", _download)
+
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt("org/cold-model")
+    assert calls, "a cold HF Hub id must fall through to a download"
+    assert calls[0]["repo_id"] == "org/cold-model"
+    assert calls[0]["filename"] == "system_prompt.txt"
+    assert any("f0f68e48" in r.getMessage() for r in caplog.records)
+
+
+def test_repo_known_to_ship_no_prompt_skips_the_download(caplog, monkeypatch):
+    """`try_to_load_from_cache` returns a private sentinel when it knows the file is
+    absent. Any non-str, non-None result means the same thing, so the implementation
+    must not import that private name to recognise it."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import check_shipped_system_prompt
+
+    seen, downloads = [], []
+
+    def _cache(**kwargs):
+        seen.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", _cache)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", lambda **kw: downloads.append(kw))
+
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt("org/no-prompt-model")
+    assert seen, "the cache was never consulted"
+    assert downloads == []
+    assert not caplog.records
+
+
+def test_a_failing_hub_lookup_never_breaks_construction(caplog, monkeypatch):
+    """Offline, private repo, bad id, DNS: all of it stays advisory and quiet."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import check_shipped_system_prompt
+
+    seen = []
+
+    def _raise(**kwargs):
+        seen.append(kwargs)
+        raise OSError("no network")
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", _raise)
+
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt("org/unreachable-model")
+    assert seen, "the HF Hub lookup was never attempted"
+    assert not caplog.records
+
+
+def test_a_local_directory_is_never_retried_as_a_hub_id(tmp_path, caplog, monkeypatch):
+    """A path that exists on disk is a path, not a repo id; no request should go out."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import check_shipped_system_prompt
+
+    seen = []
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda **kw: seen.append(kw))
+
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt(str(tmp_path))  # exists, ships no prompt file
+    assert seen == []
+    assert not caplog.records
+
+
+def _drifted_hub_prompt(tmp_path, monkeypatch):
+    """Make every HF Hub repo look like it ships a pre-2608 prompt."""
+    import huggingface_hub
+
+    cached = _shipped_prompt_file(tmp_path, "You are a 2606 classifier.")
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda **kw: cached)
+
+
+def test_hf_backend_warns_about_prompt_drift_at_construction(tmp_path, caplog, monkeypatch):
+    """`hf` resolves the model locally and is exposed to the same drift as `vllm`."""
+    import logging
+    import sys
+    import types
+
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    _drifted_hub_prompt(tmp_path, monkeypatch)
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setitem(
+        sys.modules, "transformers", types.SimpleNamespace(pipeline=lambda **kw: object())
+    )
+
+    repo = "org/drifted-model"
+    with caplog.at_level(logging.WARNING):
+        ScopeGuardV2(backend="hf", model=repo)
+    assert any(repo in r.getMessage() for r in caplog.records)
+
+
+def test_vllm_backend_warns_about_prompt_drift_at_construction(tmp_path, caplog, monkeypatch):
+    """The backend that already checked keeps checking after the move to prompting.py."""
+    import logging
+    import sys
+    import types
+
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    _drifted_hub_prompt(tmp_path, monkeypatch)
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.vllm._get_tokenizer", lambda name: object()
+    )
+    monkeypatch.setitem(
+        sys.modules, "vllm", types.SimpleNamespace(LLM=lambda **kw: object())
+    )
+
+    repo = "org/drifted-model"
+    with caplog.at_level(logging.WARNING):
+        ScopeGuardV2(backend="vllm", model=repo)
+    assert any(repo in r.getMessage() for r in caplog.records)
+
+
+def test_vllm_api_backend_warns_about_the_model_not_the_tokenizer(tmp_path, caplog, monkeypatch):
+    """`vllm-api` is what `orbitals scope-guard-v2 serve` runs, so it must warn too.
+
+    When a separate chat-templating tokenizer is configured the two references are
+    deliberately different repos, and the one whose training prompt matters is the
+    model.
+    """
+    import logging
+
+    from orbitals.scope_guard_v2 import AsyncScopeGuardV2
+
+    _drifted_hub_prompt(tmp_path, monkeypatch)
+
+    model = "org/drifted-model"
+    tokenizer = "org/tokenizer-only"
+    with caplog.at_level(logging.WARNING):
+        AsyncScopeGuardV2(
+            backend="vllm-api", model=model, chat_templating_tokenizer=tokenizer
+        )
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(model in m for m in messages)
+    assert not any(tokenizer in m for m in messages)
 
 
 async def test_async_vllm_api_backend_sends_selection_schema_and_parses_partial_output(monkeypatch):
