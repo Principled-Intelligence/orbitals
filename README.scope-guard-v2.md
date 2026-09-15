@@ -241,6 +241,8 @@ print(result.evidences)        # None -- not requested
 
 Fields you did not request come back as `None` on the result object.
 
+A single field can be given as a plain string, so `output_fields="reasoning"` means the same as `output_fields=["reasoning"]`. The comma-separated spelling belongs to the CLI (`--output-fields reasoning,scope_class`); in Python, pass a list.
+
 > [!TIP]
 > On our benchmarks the `scope_class`-only mode is both the cheapest and the most accurate. Request `reasoning`, `evidences`, or `suggested_response` when you need them for your product, not to improve the classification.
 

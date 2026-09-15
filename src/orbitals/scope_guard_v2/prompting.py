@@ -49,21 +49,38 @@ ALL_FIELDS: tuple[str, ...] = CANONICAL_ORDER
 SELECTOR_HEADER = "**REQUESTED OUTPUT FIELDS**"
 
 
-def normalize_selection(fields: Iterable[str]) -> tuple[str, ...]:
+def normalize_selection(fields: Iterable[str] | str) -> tuple[str, ...]:
     """Canonicalise an output-field selection.
 
     Dedupes, forces `scope_class` in, and sorts to canonical order, so two
     selections that differ only in iteration order render byte-identical prompts.
 
+    A plain string is taken as one field name. Without that, `str` being an
+    `Iterable[str]` means `normalize_selection("reasoning")` iterates into single
+    letters and reports eight unknown fields, which reads as eight bad names
+    rather than a wrong container type. The CLI spells the selection as
+    comma-separated text, so the string is the natural first guess in Python.
+
     Args:
-        fields: Any iterable of field names. May be empty.
+        fields: An iterable of field names, or a single name as a string. The
+            iterable may be empty; the string may not.
 
     Returns:
         The selection as a tuple in canonical order, always containing `scope_class`.
 
     Raises:
-        ValueError: If a name is not one of the four known fields.
+        ValueError: If a name is not one of the four known fields, or if a string
+            carries the CLI's comma-separated form, which this function does not
+            split -- that text format belongs to the CLI, not to the Python API.
     """
+    if isinstance(fields, str):
+        names = [f.strip() for f in fields.split(",") if f.strip()]
+        if "," in fields and names:
+            raise ValueError(
+                f"output_fields={fields!r} looks like the CLI's comma-separated form; "
+                f"pass a list of names, e.g. {names}"
+            )
+        fields = [fields]
     requested = set(fields) | {SCOPE_CLASS}
     unknown = sorted(requested - set(CANONICAL_ORDER))
     if unknown:

@@ -454,6 +454,47 @@ def test_normalize_selection_rejects_unknown_fields():
         normalize_selection(["scope_class", "confidence"])
 
 
+def test_normalize_selection_accepts_a_bare_string_as_one_field():
+    """A `str` is an `Iterable[str]`, so unguarded it iterates into single letters.
+
+    The CLI takes the selection as comma-separated text, so a caller moving from
+    the CLI to the Python API reaches for a string first.
+    """
+    from orbitals.scope_guard_v2.prompting import normalize_selection
+
+    assert normalize_selection("reasoning") == ("reasoning", "scope_class")
+    assert normalize_selection("scope_class") == ("scope_class",)
+
+
+def test_normalize_selection_names_the_bad_string_rather_than_its_letters():
+    from orbitals.scope_guard_v2.prompting import normalize_selection
+
+    with pytest.raises(ValueError, match=r"unknown output field\(s\) \['bogus'\]"):
+        normalize_selection("bogus")
+
+    # An empty string used to resolve quietly to scope_class only, which hides an
+    # unset variable changing what the model returns.
+    with pytest.raises(ValueError, match=r"unknown output field\(s\) \[''\]"):
+        normalize_selection("")
+
+
+def test_normalize_selection_points_a_comma_separated_string_at_the_list_form():
+    from orbitals.scope_guard_v2.prompting import normalize_selection
+
+    with pytest.raises(ValueError, match="comma-separated") as excinfo:
+        normalize_selection("reasoning,scope_class")
+    assert "['reasoning', 'scope_class']" in str(excinfo.value)
+
+    # A trailing comma is the same typo with one name in it.
+    with pytest.raises(ValueError, match="comma-separated") as excinfo:
+        normalize_selection("reasoning,")
+    assert "['reasoning']" in str(excinfo.value)
+
+    # Nothing to suggest, so it falls through to the unknown-field error.
+    with pytest.raises(ValueError, match=r"unknown output field"):
+        normalize_selection(",")
+
+
 def test_render_selector_block_matches_the_trainer_for_all_eight_selections():
     """Eight literal strings copied from the trainer's render_selector_block.
 
@@ -845,6 +886,22 @@ def test_api_backend_body_carries_explicit_output_fields(mocked_v2_post):
     sg.batch_validate(["a"], ai_service_description="desc", output_fields=["reasoning", "scope_class"])
     body = mocked_v2_post.call_args.kwargs["json"]
     assert body["output_fields"] == ["reasoning", "scope_class"]
+
+
+def test_string_output_fields_survives_the_constructor_and_the_call(mocked_v2_post):
+    """The guard normalises in `__init__`, so a string has to work there too."""
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    sg = ScopeGuardV2(backend="api", api_url="http://example.com", output_fields="reasoning")
+    assert sg.output_fields == ("reasoning", "scope_class")
+
+    sg.validate("hello", ai_service_description="desc")
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["output_fields"] == ["reasoning", "scope_class"]
+
+    sg.validate("hello", ai_service_description="desc", output_fields="scope_class")
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["output_fields"] == ["scope_class"]
 
 
 def test_api_parse_output_tolerates_missing_reasoning():
