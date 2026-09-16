@@ -4,8 +4,10 @@ A bare string, a single message dict, and a list of messages. The last one is th
 one worth understanding: in a multi turn conversation the decision is made about the
 final user message only, and the earlier turns are context that helps interpret it.
 
-The last two calls show why that matters. The same short question, "and if I cancel
-instead?", lands in a different class depending on what came before it.
+The last three calls show what that buys you. "And what about the return leg?" asks
+nothing on its own, and it lands in a different class each time depending on which
+turns came before it: the baggage question is answerable, the compensation one hits
+a constraint, and the unaccompanied minor one meets an escalation criterion.
 
     python conversations.py --backend api --api-key principled_1234
     python conversations.py --backend vllm --model <scope-guard-v2-model>
@@ -54,6 +56,44 @@ AI_SERVICE_DESCRIPTION = AIServiceDescriptionV2(
 )
 
 
+# A final message that carries no question of its own. What it means, and so which
+# class it lands in, is decided entirely by the turns in front of it.
+RETURN_LEG = "And what about the return leg?"
+
+RETURN_LEG_CONTEXTS = [
+    (
+        "a baggage question",
+        [
+            {"role": "user", "content": "How much hand luggage can I take on a Basic fare?"},
+            {
+                "role": "assistant",
+                "content": "One cabin bag up to 40x30x20cm, stored under the seat in front of you.",
+            },
+        ],
+    ),
+    (
+        "a question about compensation",
+        [
+            {
+                "role": "user",
+                "content": "My outbound flight landed three hours late. Will you pay me compensation?",
+            },
+            {"role": "assistant", "content": "I can't promise compensation for a delay."},
+        ],
+    ),
+    (
+        "a question about an unaccompanied minor",
+        [
+            {"role": "user", "content": "My son is 11 and flying on his own on Thursday."},
+            {
+                "role": "assistant",
+                "content": "That needs our special assistance team rather than the website.",
+            },
+        ],
+    ),
+]
+
+
 def main():
     args = parse_args()
     scope_guard = build_scope_guard(args)
@@ -72,10 +112,12 @@ def main():
         {"role": "user", "content": "Has flight VY6218 left yet?"},
     )
 
-    # 3. A conversation. Only the last user message is classified.
+    # 3. A conversation. Only the last user message is classified, and this one
+    #    matches the cancellation trigger, so the predefined response comes back
+    #    whatever the earlier turns were about.
     show(
         scope_guard,
-        "a conversation, after a question about changing a flight",
+        "a conversation ending in a cancellation question",
         [
             {"role": "user", "content": "I booked VY6218 for Thursday, reference QT4N9P."},
             {
@@ -91,20 +133,15 @@ def main():
         ],
     )
 
-    # 4. The same final message with different context before it. The guard reads it
-    #    as a question about the fare rules rather than a request to cancel.
-    show(
-        scope_guard,
-        "a conversation, after a question about fare rules",
-        [
-            {"role": "user", "content": "I'm comparing your Basic and Flex fares."},
-            {
-                "role": "assistant",
-                "content": "Happy to help. Flex allows free changes up to two hours before departure.",
-            },
-            {"role": "user", "content": "And if I cancel instead?"},
-        ],
-    )
+    # 4. The same final message under three histories. No constraint, escalation
+    #    criterion, or predefined response matches it on its own, so the context
+    #    is what decides, and each one lands in a different class.
+    for label, context in RETURN_LEG_CONTEXTS:
+        show(
+            scope_guard,
+            f"the return leg question after {label}",
+            context + [{"role": "user", "content": RETURN_LEG}],
+        )
 
 
 def show(scope_guard, label, conversation):

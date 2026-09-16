@@ -5,6 +5,12 @@ see which part of the description produced each answer. The interesting fields a
 `constraints`, which produces Restricted, `predefined_responses`, which produces
 Predefined Answer, and `escalation_criteria`, which produces Human Oversight.
 
+Potentially Supported is the fussiest of the seven. It needs a query sitting next to
+the description without being named by it, which no constraint, escalation criterion,
+or predefined response claims first. The Apple Pay question is card and app business
+that none of the functionalities cover, and it only stays in that gap because the
+knowledge scope above is narrow.
+
     python structured_description.py --backend api --api-key principled_1234
     python structured_description.py --backend vllm --model <scope-guard-v2-model>
 """
@@ -21,9 +27,12 @@ AI_SERVICE_DESCRIPTION = AIServiceDescriptionV2(
         "already signed in, usually to ask about a card payment they do not recognise "
         "or about a fee on their statement."
     ),
+    # Deliberately tight. A broader scope, such as one that also named account
+    # statements, pulls the Apple Pay query below into Directly Supported and the
+    # Potentially Supported class stops being reachable here at all.
     knowledge_scope=(
-        "Card transactions, account statements, fees, and how to use the features of "
-        "the mobile app."
+        "Card payments, the fees charged on them, and the parts of the mobile app "
+        "where a customer can see both."
     ),
     functionalities=[
         "Explain an individual card transaction on the customer's statement",
@@ -64,7 +73,7 @@ AI_SERVICE_DESCRIPTION = AIServiceDescriptionV2(
 # One query per scope class, in the order the classes are listed in the README.
 QUERIES = [
     "Why was I charged 12 euros by SNCF last Tuesday?",
-    "Which of my subscriptions renews next month?",
+    "Can I add this card to Apple Pay?",
     "I think I left my card in a taxi last night.",
     "There are three payments to an electronics shop that I never made.",
     "Can you book me a dentist appointment for Friday?",
