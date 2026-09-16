@@ -185,10 +185,3 @@ def parse_args():
 
 if __name__ == "__main__":
     main()
-
-
-# Sample run, to be filled in from a real run against the 4B.
-#
-# # a string
-#   class:     Directly Supported
-#   reasoning: ...

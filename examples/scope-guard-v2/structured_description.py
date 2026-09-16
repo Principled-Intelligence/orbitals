@@ -127,10 +127,3 @@ def parse_args():
 
 if __name__ == "__main__":
     main()
-
-
-# Sample run, to be filled in from a real run against the 4B.
-#
-# > Why was I charged 12 euros by SNCF last Tuesday?
-#   class:     Directly Supported
-#   reasoning: ...

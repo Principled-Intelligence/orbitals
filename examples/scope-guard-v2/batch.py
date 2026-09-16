@@ -136,11 +136,3 @@ def parse_args():
 
 if __name__ == "__main__":
     main()
-
-
-# Sample run, to be filled in from a real run against the 4B.
-#
-# # one description shared by every conversation
-# > A pipe burst under my kitchen sink last night. What do I need to send you?
-#   class:     Directly Supported
-#   ...
