@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -394,3 +396,1004 @@ def test_scope_guard_v2_cli_help_and_model_passthrough():
     )
     assert model_result.exit_code == 0
     assert "scope-guard-q" in model_result.stdout
+
+
+# --- output fields: selector helpers and the pinned prompt -----------------
+
+
+def test_scope_guard_v2_system_prompt_is_byte_identical_to_training():
+    """The client prompt must be the bytes the 2608 models trained on.
+
+    A diverged system prompt degrades accuracy with no parse error to show for it,
+    so drift has to be a red test. The hash is of the trainer's
+    src/prompting.SYSTEM_PROMPT, trailing newline included (the chat template puts
+    <|im_end|> right after the content, so the newline is part of what the model
+    saw). Do NOT change this to 1f37419f...: that is the newline-stripped copy
+    unsafe-eval and the Hub system_prompt.txt carry.
+    """
+    import hashlib
+
+    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT
+
+    assert len(SYSTEM_PROMPT) == 7665
+    assert SYSTEM_PROMPT.endswith("\n")
+    assert (
+        hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+        == "f0f68e48096938b93c2c497386295ff7db2929b128e9dddea944ebb6578960b5"
+    )
+
+
+def test_scope_guard_v2_system_prompt_has_no_embedded_schema_or_skip_marker():
+    from orbitals.scope_guard_v2.prompting import SELECTOR_HEADER, SYSTEM_PROMPT
+
+    assert '"$defs"' not in SYSTEM_PROMPT
+    assert "SKIP EVIDENCES" not in SYSTEM_PROMPT
+    assert SELECTOR_HEADER in SYSTEM_PROMPT
+    assert "exactly those keys" in SYSTEM_PROMPT
+
+
+def test_normalize_selection_forces_scope_class_dedupes_and_reorders():
+    from orbitals.scope_guard_v2.prompting import ALL_FIELDS, normalize_selection
+
+    assert normalize_selection([]) == ("scope_class",)
+    assert normalize_selection(["scope_class", "reasoning"]) == (
+        "reasoning",
+        "scope_class",
+    )
+    assert normalize_selection(["reasoning", "reasoning", "evidences"]) == (
+        "evidences",
+        "reasoning",
+        "scope_class",
+    )
+    assert normalize_selection(reversed(ALL_FIELDS)) == ALL_FIELDS
+
+
+def test_normalize_selection_rejects_unknown_fields():
+    from orbitals.scope_guard_v2.prompting import normalize_selection
+
+    with pytest.raises(ValueError, match="unknown output field"):
+        normalize_selection(["scope_class", "confidence"])
+
+
+def test_normalize_selection_accepts_a_bare_string_as_one_field():
+    """A `str` is an `Iterable[str]`, so unguarded it iterates into single letters.
+
+    The CLI takes the selection as comma-separated text, so a caller moving from
+    the CLI to the Python API reaches for a string first.
+    """
+    from orbitals.scope_guard_v2.prompting import normalize_selection
+
+    assert normalize_selection("reasoning") == ("reasoning", "scope_class")
+    assert normalize_selection("scope_class") == ("scope_class",)
+
+
+def test_normalize_selection_names_the_bad_string_rather_than_its_letters():
+    from orbitals.scope_guard_v2.prompting import normalize_selection
+
+    with pytest.raises(ValueError, match=r"unknown output field\(s\) \['bogus'\]"):
+        normalize_selection("bogus")
+
+    # An empty string used to resolve quietly to scope_class only, which hides an
+    # unset variable changing what the model returns.
+    with pytest.raises(ValueError, match=r"unknown output field\(s\) \[''\]"):
+        normalize_selection("")
+
+
+def test_normalize_selection_points_a_comma_separated_string_at_the_list_form():
+    from orbitals.scope_guard_v2.prompting import normalize_selection
+
+    with pytest.raises(ValueError, match="comma-separated") as excinfo:
+        normalize_selection("reasoning,scope_class")
+    assert "['reasoning', 'scope_class']" in str(excinfo.value)
+
+    # A trailing comma is the same typo with one name in it.
+    with pytest.raises(ValueError, match="comma-separated") as excinfo:
+        normalize_selection("reasoning,")
+    assert "['reasoning']" in str(excinfo.value)
+
+    # Nothing to suggest, so it falls through to the unknown-field error.
+    with pytest.raises(ValueError, match=r"unknown output field"):
+        normalize_selection(",")
+
+
+def test_render_selector_block_matches_the_trainer_for_all_eight_selections():
+    """Eight literal strings copied from the trainer's render_selector_block.
+
+    The user turn must be byte-identical to training, and this block is the part
+    of it the client composes itself.
+    """
+    from orbitals.scope_guard_v2.prompting import render_selector_block
+
+    expected = {
+        ("scope_class",): '**REQUESTED OUTPUT FIELDS**\n\n["scope_class"]',
+        ("evidences", "scope_class"): '**REQUESTED OUTPUT FIELDS**\n\n["evidences", "scope_class"]',
+        ("reasoning", "scope_class"): '**REQUESTED OUTPUT FIELDS**\n\n["reasoning", "scope_class"]',
+        ("evidences", "reasoning", "scope_class"): '**REQUESTED OUTPUT FIELDS**\n\n["evidences", "reasoning", "scope_class"]',
+        ("scope_class", "suggested_response"): '**REQUESTED OUTPUT FIELDS**\n\n["scope_class", "suggested_response"]',
+        ("evidences", "scope_class", "suggested_response"): '**REQUESTED OUTPUT FIELDS**\n\n["evidences", "scope_class", "suggested_response"]',
+        ("reasoning", "scope_class", "suggested_response"): '**REQUESTED OUTPUT FIELDS**\n\n["reasoning", "scope_class", "suggested_response"]',
+        ("evidences", "reasoning", "scope_class", "suggested_response"): '**REQUESTED OUTPUT FIELDS**\n\n["evidences", "reasoning", "scope_class", "suggested_response"]',
+    }
+    for selection, block in expected.items():
+        assert render_selector_block(selection) == block, selection
+    # order-insensitive on input
+    assert render_selector_block(["suggested_response", "scope_class", "evidences"]) == (
+        expected[("evidences", "scope_class", "suggested_response")]
+    )
+
+
+def test_potentially_supported_description_is_the_promptfix_text():
+    from orbitals.scope_guard_v2 import ScopeClass
+
+    desc = ScopeClass.POTENTIALLY_SUPPORTED.description
+    assert desc.startswith("The query is adjacent to the service's stated functionalities")
+    assert "never as a way to avoid committing to a clearer class" in desc
+
+
+# --- per-selection response model -----------------------------------------
+
+
+def test_response_model_for_requires_exactly_the_selected_keys():
+    from orbitals.scope_guard_v2.prompting import response_model_for
+
+    model = response_model_for(["scope_class"])
+    parsed = model.model_validate({"scope_class": "Restricted"})
+    assert parsed.scope_class == "Restricted"
+
+    with pytest.raises(ValidationError):  # unrequested key is forbidden
+        model.model_validate({"scope_class": "Restricted", "reasoning": "because"})
+
+    full = response_model_for(["evidences", "reasoning", "scope_class", "suggested_response"])
+    with pytest.raises(ValidationError):  # requested key is required, even if nullable
+        full.model_validate({"reasoning": "r", "scope_class": "Restricted", "suggested_response": None})
+    ok = full.model_validate(
+        {"evidences": None, "reasoning": "r", "scope_class": "Restricted", "suggested_response": None}
+    )
+    assert ok.evidences is None
+
+
+def test_response_model_for_is_cached_per_normalized_selection():
+    from orbitals.scope_guard_v2.prompting import response_model_for
+
+    a = response_model_for(["reasoning", "scope_class"])
+    b = response_model_for(["scope_class", "reasoning", "reasoning"])
+    assert a is b
+
+
+def test_response_model_for_schema_lists_only_selected_properties():
+    from orbitals.scope_guard_v2.prompting import response_model_for
+
+    schema = response_model_for(["reasoning", "scope_class"]).model_json_schema()
+    assert list(schema["properties"]) == ["reasoning", "scope_class"]
+    assert set(schema["required"]) == {"reasoning", "scope_class"}
+    assert schema.get("additionalProperties") is False
+
+
+def test_scope_guard_v2_output_reasoning_is_optional():
+    from orbitals.scope_guard_v2 import ScopeClass, ScopeGuardV2Output
+
+    out = ScopeGuardV2Output(scope_class=ScopeClass.CHIT_CHAT, model="m")
+    assert out.reasoning is None
+    assert out.evidences is None
+    assert out.suggested_response is None
+
+
+# --- user turn and selection resolution -------------------------------------
+
+
+def _user_turn(**kwargs) -> str:
+    from orbitals.scope_guard_v2.prompting import prepare_input_messages
+
+    messages = prepare_input_messages("hello", "desc", **kwargs)
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+    return messages[1]["content"]
+
+
+def test_prepare_input_messages_default_requests_all_four_fields():
+    turn = _user_turn()
+    assert turn.endswith(
+        '**END OF THE CONVERSATION DUMP**\n\n\n**REQUESTED OUTPUT FIELDS**\n\n'
+        '["evidences", "reasoning", "scope_class", "suggested_response"]'
+    )
+    assert "SKIP EVIDENCES" not in turn
+
+
+def test_prepare_input_messages_skip_evidences_drops_only_evidences():
+    turn = _user_turn(skip_evidences=True)
+    assert turn.endswith('["reasoning", "scope_class", "suggested_response"]')
+    assert _user_turn(skip_evidences=False) == _user_turn()
+
+
+def test_prepare_input_messages_output_fields_selects_the_keys():
+    turn = _user_turn(output_fields=["scope_class"])
+    assert turn.endswith('**REQUESTED OUTPUT FIELDS**\n\n["scope_class"]')
+
+
+def test_prepare_input_messages_conflicting_flags_warn_and_output_fields_wins():
+    with pytest.warns(DeprecationWarning, match="output_fields"):
+        turn = _user_turn(output_fields=["evidences", "scope_class"], skip_evidences=True)
+    assert turn.endswith('["evidences", "scope_class"]')
+
+
+def test_prepare_input_messages_agreeing_flags_do_not_warn(recwarn):
+    # skip_evidences=True implies exactly these three, so the pair agrees
+    turn = _user_turn(
+        output_fields=["reasoning", "scope_class", "suggested_response"], skip_evidences=True
+    )
+    assert turn.endswith('["reasoning", "scope_class", "suggested_response"]')
+    assert not [w for w in recwarn if issubclass(w.category, DeprecationWarning)]
+
+
+def test_resolve_selection_returns_none_when_nothing_was_passed():
+    from orbitals.scope_guard_v2.prompting import resolve_selection
+
+    assert resolve_selection(None, None) is None
+    assert resolve_selection(None, True) == ("reasoning", "scope_class", "suggested_response")
+    assert resolve_selection(None, False) == (
+        "evidences", "reasoning", "scope_class", "suggested_response",
+    )
+    assert resolve_selection(["scope_class", "evidences"], None) == ("evidences", "scope_class")
+
+
+def test_build_prompt_prefill_uses_the_selections_first_key():
+    from orbitals.scope_guard_v2.prompting import build_prompt
+
+    class _Tok:
+        def apply_chat_template(self, messages, **kwargs):
+            return "<prompt>"
+
+    assert build_prompt(_Tok(), "hello", "desc", prefill=True).endswith('{"evidences":')
+    assert build_prompt(_Tok(), "hello", "desc", skip_evidences=True, prefill=True).endswith(
+        '{"reasoning":'
+    )
+    assert build_prompt(
+        _Tok(), "hello", "desc", prefill=True, output_fields=["scope_class"]
+    ).endswith('{"scope_class":')
+    assert build_prompt(_Tok(), "hello", "desc") == "<prompt>"
+
+
+# --- base guard resolution --------------------------------------------------
+
+
+def _stub_guard(**ctor):
+    """A ScopeGuardV2 with no backend, exposing what _batch_validate received."""
+    from orbitals.scope_guard_v2 import ScopeClass, ScopeGuardV2, ScopeGuardV2Output
+    from orbitals.scope_guard_v2.guards.base import BaseScopeGuardV2
+
+    class _Stub(ScopeGuardV2):
+        def __new__(cls, *args, **kwargs):
+            return BaseScopeGuardV2.__new__(cls)
+
+        def __init__(self, **kwargs):
+            super().__init__("stub", **kwargs)
+            self.seen: list[tuple[str, ...]] = []
+
+        def _validate(self, conversation, **kwargs):
+            # every real backend delegates single to batch; the stub does too
+            return self._batch_validate([conversation], **kwargs)[0]
+
+        def _batch_validate(self, conversations, *, skip_evidences=None, output_fields=None, **kwargs):
+            selection = self._resolve_output_fields(output_fields, skip_evidences)
+            self.seen.append(selection)
+            return [
+                ScopeGuardV2Output(scope_class=ScopeClass.CHIT_CHAT, model="stub")
+                for _ in conversations
+            ]
+
+    return _Stub(**ctor)
+
+
+def test_base_guard_resolution_order():
+    all_four = ("evidences", "reasoning", "scope_class", "suggested_response")
+    no_evid = ("reasoning", "scope_class", "suggested_response")
+
+    g = _stub_guard()
+    g.validate("q", ai_service_description="d")
+    assert g.seen[-1] == all_four  # nothing anywhere -> all fields
+
+    g = _stub_guard(skip_evidences=True)
+    g.validate("q", ai_service_description="d")
+    assert g.seen[-1] == no_evid  # constructor skip_evidences
+    g.validate("q", ai_service_description="d", skip_evidences=False)
+    assert g.seen[-1] == all_four  # per-call skip_evidences overrides constructor
+    g.validate("q", ai_service_description="d", output_fields=["scope_class"])
+    assert g.seen[-1] == ("scope_class",)  # per-call output_fields overrides everything
+
+    g = _stub_guard(output_fields=["reasoning", "scope_class"])
+    g.validate("q", ai_service_description="d")
+    assert g.seen[-1] == ("reasoning", "scope_class")  # constructor output_fields
+    g.validate("q", ai_service_description="d", skip_evidences=True)
+    assert g.seen[-1] == no_evid  # per-call skip_evidences beats constructor output_fields
+    g.batch_validate(["a", "b"], ai_service_description="d", output_fields=["scope_class"])
+    assert g.seen[-1] == ("scope_class",)
+
+
+def test_base_guard_constructor_conflict_warns_once_at_construction():
+    with pytest.warns(DeprecationWarning, match="output_fields"):
+        g = _stub_guard(output_fields=["evidences", "scope_class"], skip_evidences=True)
+    g.validate("q", ai_service_description="d")
+    assert g.seen[-1] == ("evidences", "scope_class")
+
+
+# --- vllm backends -----------------------------------------------------------
+
+
+def test_check_shipped_system_prompt_warns_only_on_real_drift(tmp_path, caplog):
+    import logging
+
+    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT, check_shipped_system_prompt
+
+    # no file: silent
+    check_shipped_system_prompt(str(tmp_path))
+    # same bytes minus trailing newline (what the HF Hub ships): silent
+    (tmp_path / "system_prompt.txt").write_text(SYSTEM_PROMPT.rstrip("\n"), encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt(str(tmp_path))
+    assert not caplog.records
+    # a different prompt generation: warns and names both hashes
+    (tmp_path / "system_prompt.txt").write_text("You are a 2606 classifier.", encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt(str(tmp_path))
+    assert any(
+        "system_prompt.txt" in r.getMessage() and "f0f68e48" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def _shipped_prompt_file(tmp_path, text):
+    path = tmp_path / "system_prompt.txt"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+def test_hub_id_prompt_is_resolved_from_the_cache(tmp_path, caplog, monkeypatch):
+    """An HF Hub id is the documented call shape, so drift must be caught for it too."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import check_shipped_system_prompt
+
+    cached = _shipped_prompt_file(tmp_path, "You are a 2606 classifier.")
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda **kw: cached)
+
+    repo = "org/scope-guard-v2"
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt(repo)
+    assert any(repo in r.getMessage() and "f0f68e48" in r.getMessage() for r in caplog.records)
+
+
+def test_hub_id_whose_prompt_matches_stays_silent(tmp_path, caplog, monkeypatch):
+    """Some releases ship the prompt without the trailing newline; that is not drift."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT, check_shipped_system_prompt
+
+    cached = _shipped_prompt_file(tmp_path, SYSTEM_PROMPT.rstrip("\n"))
+    seen = []
+
+    def _cache(**kwargs):
+        seen.append(kwargs)
+        return cached
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", _cache)
+
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt("org/scope-guard-v2")
+    assert seen, "the HF Hub lookup was never attempted"
+    assert not caplog.records
+
+
+def test_cold_hub_id_downloads_the_prompt_file(tmp_path, caplog, monkeypatch):
+    """Not cached: one small download, paid before the weights load."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import check_shipped_system_prompt
+
+    downloaded = _shipped_prompt_file(tmp_path, "You are a 2606 classifier.")
+    calls = []
+
+    def _download(**kwargs):
+        calls.append(kwargs)
+        return downloaded
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda **kw: None)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", _download)
+
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt("org/cold-model")
+    assert calls, "a cold HF Hub id must fall through to a download"
+    assert calls[0]["repo_id"] == "org/cold-model"
+    assert calls[0]["filename"] == "system_prompt.txt"
+    assert any("f0f68e48" in r.getMessage() for r in caplog.records)
+
+
+def test_repo_known_to_ship_no_prompt_skips_the_download(caplog, monkeypatch):
+    """`try_to_load_from_cache` returns a private sentinel when it knows the file is
+    absent. Any non-str, non-None result means the same thing, so the implementation
+    must not import that private name to recognise it."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import check_shipped_system_prompt
+
+    seen, downloads = [], []
+
+    def _cache(**kwargs):
+        seen.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", _cache)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", lambda **kw: downloads.append(kw))
+
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt("org/no-prompt-model")
+    assert seen, "the cache was never consulted"
+    assert downloads == []
+    assert not caplog.records
+
+
+def test_a_failing_hub_lookup_never_breaks_construction(caplog, monkeypatch):
+    """Offline, private repo, bad id, DNS: all of it stays advisory and quiet."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import check_shipped_system_prompt
+
+    seen = []
+
+    def _raise(**kwargs):
+        seen.append(kwargs)
+        raise OSError("no network")
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", _raise)
+
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt("org/unreachable-model")
+    assert seen, "the HF Hub lookup was never attempted"
+    assert not caplog.records
+
+
+def test_a_local_directory_is_never_retried_as_a_hub_id(tmp_path, caplog, monkeypatch):
+    """A path that exists on disk is a path, not a repo id; no request should go out."""
+    import logging
+
+    import huggingface_hub
+
+    from orbitals.scope_guard_v2.prompting import check_shipped_system_prompt
+
+    seen = []
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda **kw: seen.append(kw))
+
+    with caplog.at_level(logging.WARNING):
+        check_shipped_system_prompt(str(tmp_path))  # exists, ships no prompt file
+    assert seen == []
+    assert not caplog.records
+
+
+def _drifted_hub_prompt(tmp_path, monkeypatch):
+    """Make every HF Hub repo look like it ships a pre-2608 prompt."""
+    import huggingface_hub
+
+    cached = _shipped_prompt_file(tmp_path, "You are a 2606 classifier.")
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda **kw: cached)
+
+
+def test_hf_backend_warns_about_prompt_drift_at_construction(tmp_path, caplog, monkeypatch):
+    """`hf` resolves the model locally and is exposed to the same drift as `vllm`."""
+    import logging
+    import sys
+    import types
+
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    _drifted_hub_prompt(tmp_path, monkeypatch)
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setitem(
+        sys.modules, "transformers", types.SimpleNamespace(pipeline=lambda **kw: object())
+    )
+
+    repo = "org/drifted-model"
+    with caplog.at_level(logging.WARNING):
+        ScopeGuardV2(backend="hf", model=repo)
+    assert any(repo in r.getMessage() for r in caplog.records)
+
+
+def test_vllm_backend_warns_about_prompt_drift_at_construction(tmp_path, caplog, monkeypatch):
+    """The backend that already checked keeps checking after the move to prompting.py."""
+    import logging
+    import sys
+    import types
+
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    _drifted_hub_prompt(tmp_path, monkeypatch)
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.vllm._get_tokenizer", lambda name: object()
+    )
+    monkeypatch.setitem(
+        sys.modules, "vllm", types.SimpleNamespace(LLM=lambda **kw: object())
+    )
+
+    repo = "org/drifted-model"
+    with caplog.at_level(logging.WARNING):
+        ScopeGuardV2(backend="vllm", model=repo)
+    assert any(repo in r.getMessage() for r in caplog.records)
+
+
+def test_vllm_api_backend_warns_about_the_model_not_the_tokenizer(tmp_path, caplog, monkeypatch):
+    """`vllm-api` is what `orbitals scope-guard-v2 serve` runs, so it must warn too.
+
+    When a separate chat-templating tokenizer is configured the two references are
+    deliberately different repos, and the one whose training prompt matters is the
+    model.
+    """
+    import logging
+
+    from orbitals.scope_guard_v2 import AsyncScopeGuardV2
+
+    _drifted_hub_prompt(tmp_path, monkeypatch)
+
+    model = "org/drifted-model"
+    tokenizer = "org/tokenizer-only"
+    with caplog.at_level(logging.WARNING):
+        AsyncScopeGuardV2(
+            backend="vllm-api", model=model, chat_templating_tokenizer=tokenizer
+        )
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(model in m for m in messages)
+    assert not any(tokenizer in m for m in messages)
+
+
+async def test_async_vllm_api_backend_sends_selection_schema_and_parses_partial_output(monkeypatch):
+    """The HTTP vLLM backend must ask for exactly the selected keys and accept a
+    completion that contains only them."""
+    from orbitals.scope_guard_v2 import AsyncScopeGuardV2, ScopeClass
+
+    captured: dict[str, Any] = {}
+
+    class _Tok:
+        def apply_chat_template(self, messages, **kwargs):
+            captured["messages"] = messages
+            return "PROMPT"
+
+        def encode(self, text):
+            return [0] * 10
+
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.vllm._get_tokenizer", lambda name: _Tok()
+    )
+
+    payload = {
+        "choices": [{"text": '{"scope_class": "Out of Scope"}'}],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105},
+    }
+
+    # vllm.py uses `async with session.post(...) as response`, unlike api.py which
+    # awaits it, so the fake must return an async context manager, not a coroutine.
+    class _PostCtx:
+        async def __aenter__(self):
+            return _FakeAiohttpResponse(payload)
+
+        async def __aexit__(self, *exc_info):
+            return None
+
+    class _FakeVllmSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return None
+
+        def post(self, url, *, json, headers):
+            captured["url"] = url
+            captured["json"] = json
+            return _PostCtx()
+
+    def _session_factory():
+        return _FakeVllmSession()
+
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.vllm.aiohttp.ClientSession", _session_factory
+    )
+
+    sg = AsyncScopeGuardV2(backend="vllm-api", model="m", vllm_serving_url="http://x")
+    result = await sg.validate(
+        "hello", ai_service_description="desc", output_fields=["scope_class"]
+    )
+
+    body = captured["json"]
+    assert body["prompt"] == "PROMPT"
+    assert list(body["structured_outputs"]["json"]["properties"]) == ["scope_class"]
+    assert captured["messages"][1]["content"].endswith('["scope_class"]')
+    assert result.scope_class == ScopeClass.OUT_OF_SCOPE
+    assert result.reasoning is None
+    assert result.evidences is None
+
+
+# --- hf backend -------------------------------------------------------------
+
+
+def test_hf_backend_passes_selection_to_the_pipeline_and_accepts_partial_output(monkeypatch):
+    """hf.py imports transformers lazily inside __init__, so a fake module in
+    sys.modules is enough -- the real package is not a test dependency."""
+    import sys
+    import types
+
+    from orbitals.scope_guard_v2 import ScopeClass, ScopeGuardV2
+
+    seen: dict[str, Any] = {}
+
+    class _FakePipeline:
+        def __init__(self, **kwargs):
+            seen["init"] = kwargs
+
+        def __call__(self, inputs, **kwargs):
+            seen["call"] = kwargs
+            single = isinstance(inputs, tuple)
+            # a real model emits exactly the requested keys; so must the fake, or the
+            # strict per-selection schema rejects it (which is the point of the schema)
+            payload = {"reasoning": "r", "scope_class": "Chit Chat"}
+            payload = {k: v for k, v in payload.items() if k in kwargs["output_fields"]}
+            out = [{"generated_text": json.dumps(payload)}]
+            return out if single else [out for _ in inputs]
+
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        types.SimpleNamespace(pipeline=lambda **kwargs: _FakePipeline(**kwargs)),
+    )
+
+    sg = ScopeGuardV2(backend="hf", model="m", output_fields=["reasoning", "scope_class"])
+    assert seen["init"]["output_fields"] == ("reasoning", "scope_class")
+
+    result = sg.validate("hello", ai_service_description="desc")
+    assert seen["call"]["output_fields"] == ("reasoning", "scope_class")
+    assert result.scope_class == ScopeClass.CHIT_CHAT
+    assert result.reasoning == "r"
+    assert result.evidences is None
+
+    results = sg.batch_validate(["a", "b"], ai_service_description="desc", output_fields=["scope_class"])
+    assert seen["call"]["output_fields"] == ("scope_class",)
+    assert len(results) == 2
+
+
+# --- api backend wire format ---------------------------------------------------
+
+
+def test_api_backend_omits_skip_evidences_when_the_caller_specified_nothing(mocked_v2_post):
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    # Nothing given at either level, so the key stays off the wire and the server's
+    # own selection stands. Sending False instead would forge an explicit per-request
+    # "all four fields" and silently override a server started with --output-fields.
+    sg = ScopeGuardV2(backend="api", api_url="http://example.com")
+    sg.validate("hello", ai_service_description="desc")
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert "skip_evidences" not in body
+    assert "output_fields" not in body
+
+    mocked_v2_post.return_value.json.return_value = [_response_payload()]  # batch shape
+    sg.batch_validate(["a"], ai_service_description="desc")
+    assert "skip_evidences" not in mocked_v2_post.call_args.kwargs["json"]
+    mocked_v2_post.return_value.json.return_value = _response_payload()
+
+    # An explicit value still travels, either way round.
+    sg = ScopeGuardV2(backend="api", api_url="http://example.com", skip_evidences=True)
+    sg.validate("hello", ai_service_description="desc", skip_evidences=False)
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["skip_evidences"] is False
+    assert "output_fields" not in body
+    sg.validate("hello", ai_service_description="desc")
+    assert mocked_v2_post.call_args.kwargs["json"]["skip_evidences"] is True
+
+
+def test_api_backend_body_carries_explicit_output_fields(mocked_v2_post):
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    sg = ScopeGuardV2(backend="api", api_url="http://example.com", output_fields=["scope_class"])
+    sg.validate("hello", ai_service_description="desc")
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["output_fields"] == ["scope_class"]
+    assert body["skip_evidences"] is True  # derived, so an older server still narrows
+
+    mocked_v2_post.return_value.json.return_value = [_response_payload()]  # batch shape
+    sg.batch_validate(["a"], ai_service_description="desc", output_fields=["reasoning", "scope_class"])
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["output_fields"] == ["reasoning", "scope_class"]
+
+
+def test_string_output_fields_survives_the_constructor_and_the_call(mocked_v2_post):
+    """The guard normalises in `__init__`, so a string has to work there too."""
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    sg = ScopeGuardV2(backend="api", api_url="http://example.com", output_fields="reasoning")
+    assert sg.output_fields == ("reasoning", "scope_class")
+
+    sg.validate("hello", ai_service_description="desc")
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["output_fields"] == ["reasoning", "scope_class"]
+
+    sg.validate("hello", ai_service_description="desc", output_fields="scope_class")
+    body = mocked_v2_post.call_args.kwargs["json"]
+    assert body["output_fields"] == ["scope_class"]
+
+
+def test_api_parse_output_tolerates_missing_reasoning():
+    from orbitals.scope_guard_v2.guards.api import _parse_output
+
+    out = _parse_output({"scope_class": "Chit Chat", "model": "m"})
+    assert out.reasoning is None
+    assert out.scope_class == "Chit Chat"
+
+
+# --- serving ------------------------------------------------------------------
+
+
+def test_scope_guard_v2_serving_forwards_output_fields_and_allows_null_reasoning(monkeypatch):
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_MODEL", "v2-model")
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_SERVING_URL", "http://localhost:8001")
+    monkeypatch.setenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", "0")
+    monkeypatch.delenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", raising=False)
+
+    from fastapi.testclient import TestClient
+
+    from orbitals.scope_guard_v2 import ScopeClass, ScopeGuardV2Output
+    from orbitals.scope_guard_v2.serving import main as serving_main
+
+    seen: dict[str, Any] = {}
+
+    class _StubAsyncGuard:
+        async def validate(self, conversation, *, ai_service_description, **kwargs):
+            seen.update(kwargs)
+            return ScopeGuardV2Output(
+                scope_class=ScopeClass.OUT_OF_SCOPE,
+                model="stub-model",
+                usage=LLMUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+            )
+
+    with TestClient(serving_main.app) as client:
+        monkeypatch.setattr(serving_main, "scope_guard", _StubAsyncGuard())
+        response = client.post(
+            "/orbitals/scope-guard-v2/validate",
+            json={
+                "conversation": "hello",
+                "ai_service_description": "desc",
+                "output_fields": ["scope_class"],
+            },
+        )
+
+    assert response.status_code == 200
+    assert seen["output_fields"] == ["scope_class"]
+    body = response.json()
+    assert body["scope_class"] == "Out of Scope"
+    assert body["reasoning"] is None
+
+
+def test_serving_body_without_skip_evidences_keeps_the_configured_selection(monkeypatch):
+    """A body that omits the key must not widen a server's configured selection.
+
+    The api client used to send `skip_evidences: false` for callers who had asked
+    for nothing, which the server could not tell from a real request to widen, so
+    `serve --output-fields` was defeated by every stock client.
+    """
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_MODEL", "v2-model")
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_SERVING_URL", "http://localhost:8001")
+    monkeypatch.delenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", raising=False)
+    monkeypatch.setenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", "reasoning")
+
+    from fastapi.testclient import TestClient
+
+    from orbitals.scope_guard_v2 import ScopeClass, ScopeGuardV2Output
+    from orbitals.scope_guard_v2.guards.base import BaseScopeGuardV2
+    from orbitals.scope_guard_v2.prompting import ALL_FIELDS
+    from orbitals.scope_guard_v2.serving import main as serving_main
+
+    resolved: list[tuple[str, ...]] = []
+
+    class _StubAsyncGuard:
+        # what SCOPE_GUARD_V2_OUTPUT_FIELDS=reasoning resolves to at startup
+        output_fields = ("reasoning", "scope_class")
+        skip_evidences = None
+        # the real precedence rule, so this exercises resolution rather than a mock
+        _resolve_output_fields = BaseScopeGuardV2._resolve_output_fields
+
+        async def validate(
+            self,
+            conversation,
+            *,
+            ai_service_description,
+            skip_evidences=None,
+            output_fields=None,
+            **kwargs,
+        ):
+            resolved.append(self._resolve_output_fields(output_fields, skip_evidences))
+            return ScopeGuardV2Output(
+                scope_class=ScopeClass.OUT_OF_SCOPE,
+                model="stub-model",
+                usage=LLMUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+            )
+
+    with TestClient(serving_main.app) as client:
+        monkeypatch.setattr(serving_main, "scope_guard", _StubAsyncGuard())
+        for extra in ({}, {"skip_evidences": False}):
+            response = client.post(
+                "/orbitals/scope-guard-v2/validate",
+                json={
+                    "conversation": "hello",
+                    "ai_service_description": "desc",
+                    **extra,
+                },
+            )
+            assert response.status_code == 200
+
+    assert resolved[0] == ("reasoning", "scope_class")  # absent key: server wins
+    assert resolved[1] == ALL_FIELDS  # explicit False: still a real request to widen
+
+
+def test_scope_guard_v2_serve_cli_exposes_output_fields():
+    from orbitals.cli.main import app
+
+    result = CliRunner().invoke(app, ["scope-guard-v2", "serve", "--help"])
+    assert result.exit_code == 0
+    assert "--output-fields" in result.stdout
+    assert "--skip-evidences" in result.stdout
+
+
+# --- output fields: one text format, shared by the CLI and the serving env ----
+
+
+def test_parse_output_fields_treats_none_as_not_specified():
+    from orbitals.scope_guard_v2.prompting import parse_output_fields
+
+    assert parse_output_fields(None) is None
+
+
+def test_parse_output_fields_splits_the_comma_form_into_canonical_order():
+    from orbitals.scope_guard_v2.prompting import parse_output_fields
+
+    assert parse_output_fields("suggested_response, reasoning") == (
+        "reasoning",
+        "scope_class",
+        "suggested_response",
+    )
+
+
+@pytest.mark.parametrize("text", ["", "   ", ","])
+def test_parse_output_fields_rejects_a_value_naming_no_fields(text):
+    """An empty value is an unset variable, not a request for every field."""
+    from orbitals.scope_guard_v2.prompting import parse_output_fields
+
+    with pytest.raises(ValueError, match="names no fields"):
+        parse_output_fields(text)
+
+
+def test_parse_output_fields_reports_an_unknown_name_like_the_python_api():
+    from orbitals.scope_guard_v2.prompting import parse_output_fields
+
+    with pytest.raises(ValueError, match=r"\['reasonig'\]"):
+        parse_output_fields("reasonig,scope_class")
+
+
+class _PopenCalled(Exception):
+    """Raised by the stub below so a test can tell how far `serve` got."""
+
+
+def _stub_vllm_spawn(monkeypatch):
+    def _boom(*args, **kwargs):
+        raise _PopenCalled(" ".join(args[0]))
+
+    monkeypatch.setattr("subprocess.Popen", _boom)
+
+
+def _invoke_serve(*args):
+    from orbitals.cli.main import app
+
+    return CliRunner(env={"NO_COLOR": "1"}).invoke(app, ["scope-guard-v2", "serve", *args])
+
+
+def test_serve_rejects_a_misspelled_output_field_before_starting_vllm(monkeypatch):
+    _stub_vllm_spawn(monkeypatch)
+
+    result = _invoke_serve("a-model", "--output-fields", "reasonig,scope_class")
+
+    assert result.exit_code == 2
+    assert "reasonig" in result.output
+    assert not isinstance(result.exception, _PopenCalled)
+
+
+def test_serve_rejects_an_empty_output_fields_value(monkeypatch):
+    _stub_vllm_spawn(monkeypatch)
+
+    result = _invoke_serve("a-model", "--output-fields", "")
+
+    assert result.exit_code == 2
+    assert "names no fields" in result.output
+
+
+def test_serve_surfaces_a_skip_evidences_conflict_on_stderr(monkeypatch):
+    """The DeprecationWarning is swallowed under uvicorn, so the CLI says it itself."""
+    _stub_vllm_spawn(monkeypatch)
+
+    result = _invoke_serve(
+        "a-model", "--skip-evidences", "--output-fields", "evidences,scope_class"
+    )
+
+    assert isinstance(result.exception, _PopenCalled)
+    assert "disagree" in result.stderr
+
+
+def test_serve_exports_the_resolved_selection_and_drops_skip_evidences(monkeypatch):
+    _stub_vllm_spawn(monkeypatch)
+    monkeypatch.delenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", raising=False)
+    monkeypatch.setenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", "1")
+
+    result = _invoke_serve("a-model", "--output-fields", "suggested_response,reasoning")
+
+    assert isinstance(result.exception, _PopenCalled)
+    assert (
+        os.environ["SCOPE_GUARD_V2_OUTPUT_FIELDS"]
+        == "reasoning,scope_class,suggested_response"
+    )
+    assert "SCOPE_GUARD_V2_SKIP_EVIDENCES" not in os.environ
+
+
+def test_serve_leaves_output_fields_unset_when_neither_flag_is_given(monkeypatch):
+    _stub_vllm_spawn(monkeypatch)
+    monkeypatch.setenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", "stale,value")
+
+    result = _invoke_serve("a-model")
+
+    assert isinstance(result.exception, _PopenCalled)
+    assert "SCOPE_GUARD_V2_OUTPUT_FIELDS" not in os.environ
+
+
+def test_serve_expands_skip_evidences_into_a_selection(monkeypatch):
+    _stub_vllm_spawn(monkeypatch)
+    monkeypatch.delenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", raising=False)
+
+    result = _invoke_serve("a-model", "--skip-evidences")
+
+    assert isinstance(result.exception, _PopenCalled)
+    assert (
+        os.environ["SCOPE_GUARD_V2_OUTPUT_FIELDS"]
+        == "reasoning,scope_class,suggested_response"
+    )
+
+
+def test_scope_guard_v2_serving_reads_the_canonical_output_fields_env_var(monkeypatch):
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_MODEL", "v2-model")
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_SERVING_URL", "http://localhost:8001")
+    monkeypatch.delenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", raising=False)
+    monkeypatch.setenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", "reasoning,scope_class")
+
+    from fastapi.testclient import TestClient
+
+    from orbitals.scope_guard_v2.serving import main as serving_main
+
+    with TestClient(serving_main.app):
+        assert serving_main.scope_guard.output_fields == ("reasoning", "scope_class")
+
+
+def test_scope_guard_v2_serving_rejects_an_empty_output_fields_env_var(monkeypatch):
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_MODEL", "v2-model")
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_SERVING_URL", "http://localhost:8001")
+    monkeypatch.delenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", raising=False)
+    monkeypatch.setenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", "")
+
+    from fastapi.testclient import TestClient
+
+    from orbitals.scope_guard_v2.serving import main as serving_main
+
+    with pytest.raises(ValueError, match="names no fields"):
+        with TestClient(serving_main.app):
+            pass

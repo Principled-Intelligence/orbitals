@@ -18,7 +18,8 @@ class ScopeGuardV2Pipeline(Pipeline):
         self,
         model,
         tokenizer=None,
-        skip_evidences: bool = False,
+        skip_evidences: bool | None = None,
+        output_fields=None,
         max_new_tokens: int = 1024,
         do_sample: bool = False,
         **kwargs,
@@ -38,24 +39,22 @@ class ScopeGuardV2Pipeline(Pipeline):
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
 
-        self.skip_evidences = skip_evidences
+        from orbitals.scope_guard_v2.prompting import resolve_selection
+
+        self.output_fields = resolve_selection(output_fields, skip_evidences)
         self.max_new_tokens = max_new_tokens
         self.do_sample = do_sample
 
         super().__init__(model, tokenizer, **kwargs)
 
     def _sanitize_parameters(self, **kwargs):
-        preprocess_kwargs = {}
-        if "skip_evidences" in kwargs or self.skip_evidences:
-            preprocess_kwargs["skip_evidences"] = kwargs.get(
-                "skip_evidences", self.skip_evidences
-            )
+        from orbitals.scope_guard_v2.prompting import ALL_FIELDS, resolve_selection
 
-        return (
-            preprocess_kwargs,
-            {},
-            {},
+        per_call = resolve_selection(
+            kwargs.get("output_fields"), kwargs.get("skip_evidences")
         )
+        selection = per_call if per_call is not None else (self.output_fields or ALL_FIELDS)
+        return ({"output_fields": selection}, {}, {})
 
     def preprocess(
         self,
@@ -63,14 +62,14 @@ class ScopeGuardV2Pipeline(Pipeline):
             orbitals.scope_guard_v2.modeling.ScopeGuardV2Input,
             str | orbitals.types.AIServiceDescriptionV2,
         ],
-        skip_evidences: bool = False,
+        output_fields=None,
     ):
         conversation, ai_service_description = inputs
 
         model_messages = orbitals.scope_guard_v2.prompting.prepare_input_messages(
             conversation,
             ai_service_description,
-            skip_evidences,
+            output_fields=output_fields,
         )
 
         text = self.tokenizer.apply_chat_template(

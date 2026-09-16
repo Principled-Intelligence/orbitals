@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Literal
+from typing import Iterable, Literal
 
 import aiohttp
 import requests
@@ -11,14 +11,59 @@ from ..modeling import (
     ScopeGuardV2InputTypeAdapter,
     ScopeGuardV2Output,
 )
+from ..prompting import resolve_selection
 from .base import AsyncScopeGuardV2, ScopeGuardV2
+
+
+def _selection_fields(
+    output_fields: Iterable[str] | None, skip_evidences: bool | None
+) -> dict:
+    """The output-field part of a request body.
+
+    `skip_evidences` is sent whenever the caller expressed one, derived from the
+    selection when they gave `output_fields` instead -- so a server that predates
+    `output_fields` still narrows the output as far as it can. `output_fields`
+    itself is sent only when the caller asked for it explicitly.
+
+    When the caller expressed nothing at either level the key is omitted rather
+    than sent as False. Both the 0.5 and pre-0.5 endpoints declare it
+    `bool | None = None`, so an absent key falls through to whatever the server
+    was configured with, which is the answer an unspecified caller wants. A
+    literal False is an explicit request for all four fields and would silently
+    defeat the server's own `--output-fields`.
+    """
+    if output_fields is not None:
+        selection = resolve_selection(output_fields, skip_evidences) or ()
+        return {
+            "skip_evidences": "evidences" not in selection,
+            "output_fields": list(selection),
+        }
+    if skip_evidences is None:
+        return {}
+    return {"skip_evidences": skip_evidences}
+
+
+def _effective_args(
+    guard, output_fields: Iterable[str] | None, skip_evidences: bool | None
+) -> tuple[Iterable[str] | None, bool | None]:
+    """Per-call values, falling back to constructor values, level by level.
+
+    A constructor selection is sent as `output_fields` only if the caller gave it
+    as `output_fields`; one that came from `skip_evidences` keeps the legacy shape.
+    """
+    if output_fields is not None or skip_evidences is not None:
+        return output_fields, skip_evidences
+    if guard.output_fields is not None and guard._ctor_output_fields_explicit:
+        return guard.output_fields, None
+    return None, guard.skip_evidences
 
 
 def _build_request_data(
     model: str | None,
     conversation: ScopeGuardV2Input,
-    skip_evidences: bool,
+    skip_evidences: bool | None,
     ai_service_description: str | AIServiceDescriptionV2,
+    output_fields: Iterable[str] | None = None,
 ) -> dict:
     return {
         **({"model": model} if model is not None else {}),
@@ -26,16 +71,17 @@ def _build_request_data(
         "ai_service_description": ai_service_description.model_dump()
         if isinstance(ai_service_description, AIServiceDescriptionV2)
         else ai_service_description,
-        "skip_evidences": skip_evidences,
+        **_selection_fields(output_fields, skip_evidences),
     }
 
 
 def _build_batch_request_data(
     model: str | None,
     conversations: list[ScopeGuardV2Input],
-    skip_evidences: bool,
+    skip_evidences: bool | None,
     ai_service_description: str | AIServiceDescriptionV2 | None = None,
     ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
+    output_fields: Iterable[str] | None = None,
 ) -> dict:
     return {
         **({"model": model} if model is not None else {}),
@@ -55,18 +101,14 @@ def _build_batch_request_data(
         **(
             {
                 "ai_service_descriptions": [
-                    (
-                        ad.model_dump()
-                        if isinstance(ad, AIServiceDescriptionV2)
-                        else ad
-                    )
+                    (ad.model_dump() if isinstance(ad, AIServiceDescriptionV2) else ad)
                     for ad in ai_service_descriptions
                 ]
             }
             if ai_service_descriptions is not None
             else {}
         ),
-        "skip_evidences": skip_evidences,
+        **_selection_fields(output_fields, skip_evidences),
     }
 
 
@@ -93,7 +135,7 @@ def _parse_output(result: dict) -> ScopeGuardV2Output:
     return ScopeGuardV2Output(
         scope_class=result["scope_class"],
         evidences=result.get("evidences"),
-        reasoning=result["reasoning"],
+        reasoning=result.get("reasoning"),
         suggested_response=result.get("suggested_response"),
         model=result["model"],
         usage=result.get("usage"),
@@ -108,18 +150,21 @@ class APIScopeGuardV2(ScopeGuardV2):
         model: str | None = None,
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
-        skip_evidences: bool = False,
+        skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         custom_headers: dict[str, str] | None = None,
         include_default_safety_principles: bool = False,
     ):
         super().__init__(
             backend,
             include_default_safety_principles=include_default_safety_principles,
+            skip_evidences=skip_evidences,
+            output_fields=output_fields,
         )
+        self._ctor_output_fields_explicit = output_fields is not None
         self.default_model = model
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
-        self.skip_evidences = skip_evidences
         self.custom_headers = custom_headers if custom_headers is not None else {}
         if self.api_key is not None:
             self.custom_headers["X-API-Key"] = self.api_key
@@ -130,17 +175,18 @@ class APIScopeGuardV2(ScopeGuardV2):
         *,
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         model: str | None = None,
         **kwargs,
     ) -> ScopeGuardV2Output:
+        eff_fields, eff_skip = _effective_args(self, output_fields, skip_evidences)
         response = requests.post(
             f"{self.api_url}/orbitals/scope-guard-v2/validate",
             json=_build_request_data(
                 model=model if model is not None else self.default_model,
                 conversation=conversation,
-                skip_evidences=skip_evidences
-                if skip_evidences is not None
-                else self.skip_evidences,
+                output_fields=eff_fields,
+                skip_evidences=eff_skip,
                 ai_service_description=ai_service_description,
             ),
             headers={**self.custom_headers, "Content-Type": "application/json"},
@@ -155,17 +201,18 @@ class APIScopeGuardV2(ScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2 | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         model: str | None = None,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
+        eff_fields, eff_skip = _effective_args(self, output_fields, skip_evidences)
         response = requests.post(
             f"{self.api_url}/orbitals/scope-guard-v2/batch-validate",
             json=_build_batch_request_data(
                 model=model if model is not None else self.default_model,
                 conversations=conversations,
-                skip_evidences=skip_evidences
-                if skip_evidences is not None
-                else self.skip_evidences,
+                output_fields=eff_fields,
+                skip_evidences=eff_skip,
                 ai_service_description=ai_service_description,
                 ai_service_descriptions=ai_service_descriptions,
             ),
@@ -183,18 +230,21 @@ class AsyncAPIScopeGuardV2(AsyncScopeGuardV2):
         model: str | None = None,
         api_url: str = "http://localhost:8000",
         api_key: str | None = None,
-        skip_evidences: bool = False,
+        skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         custom_headers: dict[str, str] | None = None,
         include_default_safety_principles: bool = False,
     ):
         super().__init__(
             backend,
             include_default_safety_principles=include_default_safety_principles,
+            skip_evidences=skip_evidences,
+            output_fields=output_fields,
         )
+        self._ctor_output_fields_explicit = output_fields is not None
         self.default_model = model
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
-        self.skip_evidences = skip_evidences
         self.custom_headers = custom_headers if custom_headers is not None else {}
         if self.api_key is not None:
             self.custom_headers["X-API-Key"] = self.api_key
@@ -205,18 +255,19 @@ class AsyncAPIScopeGuardV2(AsyncScopeGuardV2):
         *,
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         model: str | None = None,
         **kwargs,
     ) -> ScopeGuardV2Output:
+        eff_fields, eff_skip = _effective_args(self, output_fields, skip_evidences)
         async with aiohttp.ClientSession() as session:
             response = await session.post(
                 f"{self.api_url}/orbitals/scope-guard-v2/validate",
                 json=_build_request_data(
                     model=model if model is not None else self.default_model,
                     conversation=conversation,
-                    skip_evidences=skip_evidences
-                    if skip_evidences is not None
-                    else self.skip_evidences,
+                    output_fields=eff_fields,
+                    skip_evidences=eff_skip,
                     ai_service_description=ai_service_description,
                 ),
                 headers={**self.custom_headers, "Content-Type": "application/json"},
@@ -233,18 +284,19 @@ class AsyncAPIScopeGuardV2(AsyncScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2 | None = None,
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
+        output_fields: Iterable[str] | None = None,
         model: str | None = None,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
+        eff_fields, eff_skip = _effective_args(self, output_fields, skip_evidences)
         async with aiohttp.ClientSession() as session:
             response = await session.post(
                 f"{self.api_url}/orbitals/scope-guard-v2/batch-validate",
                 json=_build_batch_request_data(
                     model=model if model is not None else self.default_model,
                     conversations=conversations,
-                    skip_evidences=skip_evidences
-                    if skip_evidences is not None
-                    else self.skip_evidences,
+                    output_fields=eff_fields,
+                    skip_evidences=eff_skip,
                     ai_service_description=ai_service_description,
                     ai_service_descriptions=ai_service_descriptions,
                 ),

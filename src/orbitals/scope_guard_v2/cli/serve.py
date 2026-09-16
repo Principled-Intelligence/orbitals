@@ -4,11 +4,14 @@ import shlex
 import subprocess
 import sys
 import time
+import warnings
 from pathlib import Path
 
 import httpx
 import typer
 import uvicorn
+
+from ..prompting import parse_output_fields, resolve_selection
 
 app = typer.Typer()
 
@@ -27,7 +30,15 @@ def setup_fastapi_logging():
 @app.command("serve")
 def serve(
     vllm_model: str = typer.Argument(..., help="The model used for vLLM serving"),
-    skip_evidences: bool = typer.Option(False, help="Whether to skip evidences"),
+    skip_evidences: bool | None = typer.Option(None, help="Whether to skip evidences"),
+    output_fields: str | None = typer.Option(
+        None,
+        help=(
+            "Comma-separated output fields the model should emit, e.g. "
+            "'reasoning,scope_class'. scope_class is always included. "
+            "Overrides --skip-evidences."
+        ),
+    ),
     port: int = typer.Option(
         8000, "-p", "--port", help="The port to use for the server"
     ),
@@ -48,11 +59,30 @@ def serve(
         None, help="Extra arguments to pass to the vLLM server"
     ),
 ):
+    # Resolved here, before anything is loaded. A misspelled field costs a second
+    # rather than a full model load.
+    with warnings.catch_warnings(record=True) as conflicts:
+        warnings.simplefilter("always", DeprecationWarning)
+        try:
+            selection = resolve_selection(
+                parse_output_fields(output_fields), skip_evidences
+            )
+        except ValueError as e:
+            raise typer.BadParameter(str(e), param_hint="--output-fields") from e
+    # The conflict warning is a DeprecationWarning raised from library code, which
+    # Python's default filters drop before it reaches anyone running the server.
+    for conflict in conflicts:
+        typer.echo(f"Warning: {conflict.message}", err=True)
+
     os.environ["SCOPE_GUARD_V2_VLLM_MODEL"] = vllm_model
     os.environ["SCOPE_GUARD_V2_VLLM_SERVING_URL"] = f"http://localhost:{vllm_port}"
-    os.environ["SCOPE_GUARD_V2_SKIP_EVIDENCES"] = (
-        str(1) if skip_evidences else str(0)
-    )
+    # The selection carries the --skip-evidences decision already, so the server is
+    # handed one unambiguous value and never re-derives it.
+    os.environ.pop("SCOPE_GUARD_V2_SKIP_EVIDENCES", None)
+    if selection is None:
+        os.environ.pop("SCOPE_GUARD_V2_OUTPUT_FIELDS", None)
+    else:
+        os.environ["SCOPE_GUARD_V2_OUTPUT_FIELDS"] = ",".join(selection)
 
     vllm_logging_config = (
         Path(__file__).parent.parent / "serving" / "vllm_logging_config.json"

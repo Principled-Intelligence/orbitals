@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from orbitals.scope_guard_v2 import AsyncScopeGuardV2
 from orbitals.scope_guard_v2.guards import AsyncVLLMApiScopeGuardV2
 from orbitals.scope_guard_v2.modeling import ScopeClass, ScopeGuardV2Input
+from orbitals.scope_guard_v2.prompting import parse_output_fields
 from orbitals.types import AIServiceDescriptionV2, LLMUsage
 
 scope_guard: AsyncVLLMApiScopeGuardV2
@@ -19,10 +20,16 @@ scope_guard: AsyncVLLMApiScopeGuardV2
 async def lifespan(app: FastAPI):
     global scope_guard
 
+    # No default on the lookup: an absent variable means "not specified", while one
+    # that is set but empty is an error, exactly as the CLI flag behaves.
+    output_fields = parse_output_fields(os.environ.get("SCOPE_GUARD_V2_OUTPUT_FIELDS"))
+
     scope_guard = AsyncScopeGuardV2(  # type: ignore[invalid-assignment]
         backend="vllm-api",
         model=os.environ["SCOPE_GUARD_V2_VLLM_MODEL"],
-        skip_evidences=os.environ["SCOPE_GUARD_V2_SKIP_EVIDENCES"] == "1",
+        # True or None, never False, so it cannot shadow output_fields from the env
+        skip_evidences=(os.environ.get("SCOPE_GUARD_V2_SKIP_EVIDENCES") == "1") or None,
+        output_fields=output_fields,
         vllm_serving_url=os.environ["SCOPE_GUARD_V2_VLLM_SERVING_URL"],
     )
 
@@ -45,7 +52,7 @@ app.add_middleware(
 class ScopeGuardV2Response(BaseModel):
     scope_class: ScopeClass
     evidences: list[str] | None
-    reasoning: str
+    reasoning: str | None
     suggested_response: str | None
     model: str
     usage: LLMUsage
@@ -57,6 +64,7 @@ async def validate(
     conversation: ScopeGuardV2Input,
     ai_service_description: Annotated[str | AIServiceDescriptionV2, Body()],
     skip_evidences: Annotated[bool | None, Body()] = None,
+    output_fields: Annotated[list[str] | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
     include_default_safety_principles: Annotated[bool | None, Body()] = None,
 ) -> ScopeGuardV2Response:
@@ -67,6 +75,7 @@ async def validate(
         conversation,
         ai_service_description=ai_service_description,
         skip_evidences=skip_evidences,
+        output_fields=output_fields,
         include_default_safety_principles=include_default_safety_principles,
         model=model,
     )
@@ -94,6 +103,7 @@ async def batch_validate(
         None
     ),
     skip_evidences: Annotated[bool | None, Body()] = None,
+    output_fields: Annotated[list[str] | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
     include_default_safety_principles: Annotated[bool | None, Body()] = None,
 ) -> list[ScopeGuardV2Response]:
@@ -105,6 +115,7 @@ async def batch_validate(
         ai_service_description=ai_service_description,
         ai_service_descriptions=ai_service_descriptions,
         skip_evidences=skip_evidences,
+        output_fields=output_fields,
         include_default_safety_principles=include_default_safety_principles,
         model=model,
     )

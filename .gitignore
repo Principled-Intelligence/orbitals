@@ -204,3 +204,5 @@ __marimo__/
 
 # Custom
 .hf_token*
+# Superpowers planning docs (kept locally, not tracked)
+docs/superpowers/
