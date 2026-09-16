@@ -20,11 +20,17 @@ def _selection_fields(
 ) -> dict:
     """The output-field part of a request body.
 
-    `skip_evidences` is always sent, derived from the selection when the caller
-    gave `output_fields` -- so a server that predates `output_fields` still narrows
-    the output as far as it can. `output_fields` itself is sent only when the
-    caller asked for it explicitly, which keeps the body byte-identical to
-    pre-0.5 clients for every caller who did not.
+    `skip_evidences` is sent whenever the caller expressed one, derived from the
+    selection when they gave `output_fields` instead -- so a server that predates
+    `output_fields` still narrows the output as far as it can. `output_fields`
+    itself is sent only when the caller asked for it explicitly.
+
+    When the caller expressed nothing at either level the key is omitted rather
+    than sent as False. Both the 0.5 and pre-0.5 endpoints declare it
+    `bool | None = None`, so an absent key falls through to whatever the server
+    was configured with, which is the answer an unspecified caller wants. A
+    literal False is an explicit request for all four fields and would silently
+    defeat the server's own `--output-fields`.
     """
     if output_fields is not None:
         selection = resolve_selection(output_fields, skip_evidences) or ()
@@ -32,7 +38,9 @@ def _selection_fields(
             "skip_evidences": "evidences" not in selection,
             "output_fields": list(selection),
         }
-    return {"skip_evidences": bool(skip_evidences)}
+    if skip_evidences is None:
+        return {}
+    return {"skip_evidences": skip_evidences}
 
 
 def _effective_args(

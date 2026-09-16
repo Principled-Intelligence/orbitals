@@ -187,8 +187,22 @@ of the prefilled prefix.
 
 The `api` backend adds `"output_fields": [...]` to the request body **only when the
 resolved selection came from an explicit `output_fields`** (levels 1 or 3 above).
-When the caller used `skip_evidences` or nothing, the body is byte-identical to
-today's, so a 0.5 client against a pre-0.5 server behaves exactly as before.
+When the caller used `skip_evidences`, the body carries it as before.
+
+When the caller expressed neither, the body **omits `skip_evidences` entirely**
+rather than sending `false`. A 0.5 server runs this same ladder over the body it
+receives, so a literal `false` lands on level 2 and resolves to `ALL_FIELDS`; only
+an absent key falls through to the server's own levels 3-5. Sending `false` for a
+caller who asked for nothing would therefore make `serve --output-fields`
+unreachable for every such caller. Both the 0.5 and pre-0.5 endpoints declare
+`skip_evidences: bool | None = None`, so omitting the key is well-formed against
+either.
+
+This gives up byte-identity with pre-0.5 bodies for the caller who asked for
+nothing, and changes one behaviour against a pre-0.5 server: that client used to
+send `false` and so override the server's `SCOPE_GUARD_V2_SKIP_EVIDENCES=1`, and
+now inherits it. A caller who expressed nothing has no opinion to enforce, so
+inheriting is the intended reading on both server versions.
 
 The serving endpoints accept `output_fields: list[str] | None = Body(None)` next to
 `skip_evidences`. The CLI `serve` gains `--output-fields` (comma-separated),

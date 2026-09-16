@@ -256,6 +256,8 @@ If you pass both `output_fields` and `skip_evidences` and they disagree, `output
 
 On the CLI, `orbitals scope-guard-v2 serve --output-fields reasoning,scope_class` spells the same selection as comma-separated text. The CLI checks it before it starts vLLM, so a misspelled field name fails in under a second with the error you would get in Python. An empty value (`--output-fields ""`) is an error too, on the grounds that it is almost always an unset shell variable. Omit the flag to get every field. If `--skip-evidences` disagrees with `--output-fields`, the CLI prints the conflict on stderr.
 
+Against a server started that way, a client that asks for nothing inherits the server's selection: the `api` backend leaves `skip_evidences` out of the request entirely, so `--output-fields` decides. Passing `output_fields` or `skip_evidences` on the call or the constructor overrides it, in either direction.
+
 ### Default Safety Principles
 
 Like V1, ScopeGuard V2 can optionally add a built-in set of general safety restrictions to the AI service description before classification. When the description is an `AIServiceDescriptionV2`, they are appended to its `constraints`; service-specific rules are overridden on conflict.

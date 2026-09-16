@@ -1070,15 +1070,24 @@ def test_hf_backend_passes_selection_to_the_pipeline_and_accepts_partial_output(
 # --- api backend wire format ---------------------------------------------------
 
 
-def test_api_backend_body_is_unchanged_when_output_fields_not_used(mocked_v2_post):
+def test_api_backend_omits_skip_evidences_when_the_caller_specified_nothing(mocked_v2_post):
     from orbitals.scope_guard_v2 import ScopeGuardV2
 
+    # Nothing given at either level, so the key stays off the wire and the server's
+    # own selection stands. Sending False instead would forge an explicit per-request
+    # "all four fields" and silently override a server started with --output-fields.
     sg = ScopeGuardV2(backend="api", api_url="http://example.com")
     sg.validate("hello", ai_service_description="desc")
     body = mocked_v2_post.call_args.kwargs["json"]
-    assert body["skip_evidences"] is False
+    assert "skip_evidences" not in body
     assert "output_fields" not in body
 
+    mocked_v2_post.return_value.json.return_value = [_response_payload()]  # batch shape
+    sg.batch_validate(["a"], ai_service_description="desc")
+    assert "skip_evidences" not in mocked_v2_post.call_args.kwargs["json"]
+    mocked_v2_post.return_value.json.return_value = _response_payload()
+
+    # An explicit value still travels, either way round.
     sg = ScopeGuardV2(backend="api", api_url="http://example.com", skip_evidences=True)
     sg.validate("hello", ai_service_description="desc", skip_evidences=False)
     body = mocked_v2_post.call_args.kwargs["json"]
@@ -1168,6 +1177,67 @@ def test_scope_guard_v2_serving_forwards_output_fields_and_allows_null_reasoning
     body = response.json()
     assert body["scope_class"] == "Out of Scope"
     assert body["reasoning"] is None
+
+
+def test_serving_body_without_skip_evidences_keeps_the_configured_selection(monkeypatch):
+    """A body that omits the key must not widen a server's configured selection.
+
+    The api client used to send `skip_evidences: false` for callers who had asked
+    for nothing, which the server could not tell from a real request to widen, so
+    `serve --output-fields` was defeated by every stock client.
+    """
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_MODEL", "v2-model")
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_SERVING_URL", "http://localhost:8001")
+    monkeypatch.delenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", raising=False)
+    monkeypatch.setenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", "reasoning")
+
+    from fastapi.testclient import TestClient
+
+    from orbitals.scope_guard_v2 import ScopeClass, ScopeGuardV2Output
+    from orbitals.scope_guard_v2.guards.base import BaseScopeGuardV2
+    from orbitals.scope_guard_v2.prompting import ALL_FIELDS
+    from orbitals.scope_guard_v2.serving import main as serving_main
+
+    resolved: list[tuple[str, ...]] = []
+
+    class _StubAsyncGuard:
+        # what SCOPE_GUARD_V2_OUTPUT_FIELDS=reasoning resolves to at startup
+        output_fields = ("reasoning", "scope_class")
+        skip_evidences = None
+        # the real precedence rule, so this exercises resolution rather than a mock
+        _resolve_output_fields = BaseScopeGuardV2._resolve_output_fields
+
+        async def validate(
+            self,
+            conversation,
+            *,
+            ai_service_description,
+            skip_evidences=None,
+            output_fields=None,
+            **kwargs,
+        ):
+            resolved.append(self._resolve_output_fields(output_fields, skip_evidences))
+            return ScopeGuardV2Output(
+                scope_class=ScopeClass.OUT_OF_SCOPE,
+                model="stub-model",
+                usage=LLMUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+            )
+
+    with TestClient(serving_main.app) as client:
+        monkeypatch.setattr(serving_main, "scope_guard", _StubAsyncGuard())
+        for extra in ({}, {"skip_evidences": False}):
+            response = client.post(
+                "/orbitals/scope-guard-v2/validate",
+                json={
+                    "conversation": "hello",
+                    "ai_service_description": "desc",
+                    **extra,
+                },
+            )
+            assert response.status_code == 200
+
+    assert resolved[0] == ("reasoning", "scope_class")  # absent key: server wins
+    assert resolved[1] == ALL_FIELDS  # explicit False: still a real request to widen
 
 
 def test_scope_guard_v2_serve_cli_exposes_output_fields():
