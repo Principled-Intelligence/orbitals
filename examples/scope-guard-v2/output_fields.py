@@ -15,9 +15,10 @@ both: the calls in the loop each name their own selection, and the calls after i
 leave the argument off and fall back to the guard's.
 
 The `completion tokens` line is what shows the completion shrinking, and printing it
-needs a backend that reports usage. `api` and `vllm` do. `hf` runs the pipeline that
-ships with the model, which hands back the generated text and nothing else, so the
-line is skipped there.
+needs a backend that reports usage. `api` and `vllm` always do. `hf` reports it only
+when the checkpoint ships a pipeline that counts tokens, since that code lives in the
+model repo rather than in this library, so against an older checkpoint the line is
+skipped.
 
     python output_fields.py --backend api --api-key principled_1234
     python output_fields.py --backend vllm --model <scope-guard-v2-model>
