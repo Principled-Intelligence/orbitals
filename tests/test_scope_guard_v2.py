@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -1133,7 +1134,7 @@ def test_scope_guard_v2_serving_forwards_output_fields_and_allows_null_reasoning
     monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_MODEL", "v2-model")
     monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_SERVING_URL", "http://localhost:8001")
     monkeypatch.setenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", "0")
-    monkeypatch.setenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", "")
+    monkeypatch.delenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", raising=False)
 
     from fastapi.testclient import TestClient
 
@@ -1176,3 +1177,153 @@ def test_scope_guard_v2_serve_cli_exposes_output_fields():
     assert result.exit_code == 0
     assert "--output-fields" in result.stdout
     assert "--skip-evidences" in result.stdout
+
+
+# --- output fields: one text format, shared by the CLI and the serving env ----
+
+
+def test_parse_output_fields_treats_none_as_not_specified():
+    from orbitals.scope_guard_v2.prompting import parse_output_fields
+
+    assert parse_output_fields(None) is None
+
+
+def test_parse_output_fields_splits_the_comma_form_into_canonical_order():
+    from orbitals.scope_guard_v2.prompting import parse_output_fields
+
+    assert parse_output_fields("suggested_response, reasoning") == (
+        "reasoning",
+        "scope_class",
+        "suggested_response",
+    )
+
+
+@pytest.mark.parametrize("text", ["", "   ", ","])
+def test_parse_output_fields_rejects_a_value_naming_no_fields(text):
+    """An empty value is an unset variable, not a request for every field."""
+    from orbitals.scope_guard_v2.prompting import parse_output_fields
+
+    with pytest.raises(ValueError, match="names no fields"):
+        parse_output_fields(text)
+
+
+def test_parse_output_fields_reports_an_unknown_name_like_the_python_api():
+    from orbitals.scope_guard_v2.prompting import parse_output_fields
+
+    with pytest.raises(ValueError, match=r"\['reasonig'\]"):
+        parse_output_fields("reasonig,scope_class")
+
+
+class _PopenCalled(Exception):
+    """Raised by the stub below so a test can tell how far `serve` got."""
+
+
+def _stub_vllm_spawn(monkeypatch):
+    def _boom(*args, **kwargs):
+        raise _PopenCalled(" ".join(args[0]))
+
+    monkeypatch.setattr("subprocess.Popen", _boom)
+
+
+def _invoke_serve(*args):
+    from orbitals.cli.main import app
+
+    return CliRunner(env={"NO_COLOR": "1"}).invoke(app, ["scope-guard-v2", "serve", *args])
+
+
+def test_serve_rejects_a_misspelled_output_field_before_starting_vllm(monkeypatch):
+    _stub_vllm_spawn(monkeypatch)
+
+    result = _invoke_serve("a-model", "--output-fields", "reasonig,scope_class")
+
+    assert result.exit_code == 2
+    assert "reasonig" in result.output
+    assert not isinstance(result.exception, _PopenCalled)
+
+
+def test_serve_rejects_an_empty_output_fields_value(monkeypatch):
+    _stub_vllm_spawn(monkeypatch)
+
+    result = _invoke_serve("a-model", "--output-fields", "")
+
+    assert result.exit_code == 2
+    assert "names no fields" in result.output
+
+
+def test_serve_surfaces_a_skip_evidences_conflict_on_stderr(monkeypatch):
+    """The DeprecationWarning is swallowed under uvicorn, so the CLI says it itself."""
+    _stub_vllm_spawn(monkeypatch)
+
+    result = _invoke_serve(
+        "a-model", "--skip-evidences", "--output-fields", "evidences,scope_class"
+    )
+
+    assert isinstance(result.exception, _PopenCalled)
+    assert "disagree" in result.stderr
+
+
+def test_serve_exports_the_resolved_selection_and_drops_skip_evidences(monkeypatch):
+    _stub_vllm_spawn(monkeypatch)
+    monkeypatch.delenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", raising=False)
+    monkeypatch.setenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", "1")
+
+    result = _invoke_serve("a-model", "--output-fields", "suggested_response,reasoning")
+
+    assert isinstance(result.exception, _PopenCalled)
+    assert (
+        os.environ["SCOPE_GUARD_V2_OUTPUT_FIELDS"]
+        == "reasoning,scope_class,suggested_response"
+    )
+    assert "SCOPE_GUARD_V2_SKIP_EVIDENCES" not in os.environ
+
+
+def test_serve_leaves_output_fields_unset_when_neither_flag_is_given(monkeypatch):
+    _stub_vllm_spawn(monkeypatch)
+    monkeypatch.setenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", "stale,value")
+
+    result = _invoke_serve("a-model")
+
+    assert isinstance(result.exception, _PopenCalled)
+    assert "SCOPE_GUARD_V2_OUTPUT_FIELDS" not in os.environ
+
+
+def test_serve_expands_skip_evidences_into_a_selection(monkeypatch):
+    _stub_vllm_spawn(monkeypatch)
+    monkeypatch.delenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", raising=False)
+
+    result = _invoke_serve("a-model", "--skip-evidences")
+
+    assert isinstance(result.exception, _PopenCalled)
+    assert (
+        os.environ["SCOPE_GUARD_V2_OUTPUT_FIELDS"]
+        == "reasoning,scope_class,suggested_response"
+    )
+
+
+def test_scope_guard_v2_serving_reads_the_canonical_output_fields_env_var(monkeypatch):
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_MODEL", "v2-model")
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_SERVING_URL", "http://localhost:8001")
+    monkeypatch.delenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", raising=False)
+    monkeypatch.setenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", "reasoning,scope_class")
+
+    from fastapi.testclient import TestClient
+
+    from orbitals.scope_guard_v2.serving import main as serving_main
+
+    with TestClient(serving_main.app):
+        assert serving_main.scope_guard.output_fields == ("reasoning", "scope_class")
+
+
+def test_scope_guard_v2_serving_rejects_an_empty_output_fields_env_var(monkeypatch):
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_MODEL", "v2-model")
+    monkeypatch.setenv("SCOPE_GUARD_V2_VLLM_SERVING_URL", "http://localhost:8001")
+    monkeypatch.delenv("SCOPE_GUARD_V2_SKIP_EVIDENCES", raising=False)
+    monkeypatch.setenv("SCOPE_GUARD_V2_OUTPUT_FIELDS", "")
+
+    from fastapi.testclient import TestClient
+
+    from orbitals.scope_guard_v2.serving import main as serving_main
+
+    with pytest.raises(ValueError, match="names no fields"):
+        with TestClient(serving_main.app):
+            pass

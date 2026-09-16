@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from orbitals.scope_guard_v2 import AsyncScopeGuardV2
 from orbitals.scope_guard_v2.guards import AsyncVLLMApiScopeGuardV2
 from orbitals.scope_guard_v2.modeling import ScopeClass, ScopeGuardV2Input
+from orbitals.scope_guard_v2.prompting import parse_output_fields
 from orbitals.types import AIServiceDescriptionV2, LLMUsage
 
 scope_guard: AsyncVLLMApiScopeGuardV2
@@ -19,8 +20,9 @@ scope_guard: AsyncVLLMApiScopeGuardV2
 async def lifespan(app: FastAPI):
     global scope_guard
 
-    raw_fields = os.environ.get("SCOPE_GUARD_V2_OUTPUT_FIELDS", "")
-    output_fields = [f.strip() for f in raw_fields.split(",") if f.strip()] or None
+    # No default on the lookup: an absent variable means "not specified", while one
+    # that is set but empty is an error, exactly as the CLI flag behaves.
+    output_fields = parse_output_fields(os.environ.get("SCOPE_GUARD_V2_OUTPUT_FIELDS"))
 
     scope_guard = AsyncScopeGuardV2(  # type: ignore[invalid-assignment]
         backend="vllm-api",

@@ -95,6 +95,36 @@ def normalize_selection(fields: Iterable[str] | str) -> tuple[str, ...]:
     return tuple(f for f in CANONICAL_ORDER if f in requested)
 
 
+def parse_output_fields(text: str | None) -> tuple[str, ...] | None:
+    """Read a selection from the text form the CLI and the serving env use.
+
+    The comma-separated spelling belongs to this layer. `normalize_selection`
+    deliberately refuses it, so a caller reaching for the CLI's spelling in Python is
+    told to pass a list; here it is the only spelling there is.
+
+    Args:
+        text: The raw flag or environment value, or None when it was not set at all.
+
+    Returns:
+        A normalised selection, or None when nothing was specified. A shell spells
+        "not specified" as an absent variable, so None is the only input that means it.
+
+    Raises:
+        ValueError: If the value names no fields -- `""`, `","`, whitespace -- which is
+            nearly always an unset variable rather than a request for every field; or
+            if a name is not one of the four known fields.
+    """
+    if text is None:
+        return None
+    names = [name.strip() for name in text.split(",") if name.strip()]
+    if not names:
+        raise ValueError(
+            f"output fields {text!r} names no fields; expected a comma-separated "
+            f"subset of {list(CANONICAL_ORDER)}"
+        )
+    return normalize_selection(names)
+
+
 def render_selector_block(selection: Iterable[str]) -> str:
     """The block appended to the user turn naming the keys the model must emit.
 
