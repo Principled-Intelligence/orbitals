@@ -1397,3 +1397,250 @@ def test_scope_guard_v2_serving_rejects_an_empty_output_fields_env_var(monkeypat
     with pytest.raises(ValueError, match="names no fields"):
         with TestClient(serving_main.app):
             pass
+
+
+def _in_process_vllm_guard(
+    monkeypatch, *, prompt_token_ids, completion_token_ids, text, **kwargs
+):
+    """Build a `vllm` guard whose engine returns one canned generation.
+
+    The real backend never reaches vLLM in the suite, so the fake has to supply the
+    two attributes the usage count is derived from: the prompt's token ids and the
+    completion's.
+    """
+    import sys
+    import types
+
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    class _Tokenizer:
+        def apply_chat_template(self, messages, **kwargs):
+            return "".join(m["content"] for m in messages)
+
+        def encode(self, text):
+            return text.split()
+
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.vllm._get_tokenizer", lambda name: _Tokenizer()
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm",
+        types.SimpleNamespace(
+            LLM=lambda **kw: types.SimpleNamespace(
+                generate=lambda prompts, params, use_tqdm=False: [
+                    types.SimpleNamespace(
+                        prompt_token_ids=prompt_token_ids,
+                        outputs=[
+                            types.SimpleNamespace(
+                                text=text, token_ids=completion_token_ids
+                            )
+                        ],
+                    )
+                ]
+            ),
+            SamplingParams=lambda **kw: object(),
+            sampling_params=types.SimpleNamespace(
+                StructuredOutputsParams=lambda **kw: object()
+            ),
+        ),
+    )
+    return ScopeGuardV2(backend="vllm", model="m", **kwargs)
+
+
+def test_vllm_backend_reports_usage_without_the_system_prompt(monkeypatch):
+    """The in process backend reported `usage=None`, so `--backend vllm` could not
+    show that a smaller selection buys a shorter completion.
+
+    The system prompt is fixed overhead the caller did not write, and `vllm-api`
+    already subtracts it, so the two backends must agree on what they charge for.
+    """
+    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT
+
+    guard = _in_process_vllm_guard(
+        monkeypatch,
+        prompt_token_ids=list(range(500)),
+        completion_token_ids=list(range(8)),
+        text='{"scope_class": "Directly Supported"}',
+    )
+
+    result = guard.validate(
+        "hello", ai_service_description="A test service.", output_fields=["scope_class"]
+    )
+
+    overhead = len(SYSTEM_PROMPT.split())
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 500 - overhead
+    assert result.usage.completion_tokens == 8
+    assert result.usage.total_tokens == 500 + 8 - overhead
+
+
+def test_vllm_backend_can_be_asked_to_count_the_system_prompt(monkeypatch):
+    """`vllm-api` takes `count_system_prompt_in_usage`; the in process backend needs
+    the same switch or the two disagree on the same deployment."""
+    guard = _in_process_vllm_guard(
+        monkeypatch,
+        prompt_token_ids=list(range(500)),
+        completion_token_ids=list(range(8)),
+        text='{"scope_class": "Directly Supported"}',
+        count_system_prompt_in_usage=True,
+    )
+
+    result = guard.validate(
+        "hello", ai_service_description="A test service.", output_fields=["scope_class"]
+    )
+
+    assert result.usage.prompt_tokens == 500
+    assert result.usage.total_tokens == 508
+
+
+def _hf_guard(monkeypatch, *, record, **kwargs):
+    """Build an `hf` guard whose pipeline returns one canned record.
+
+    The pipeline ships inside the model repo, so what it puts in that dict is the
+    variable these tests are about.
+    """
+    import sys
+    import types
+
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    class _Tokenizer:
+        def encode(self, text):
+            return text.split()
+
+    class _Pipeline:
+        tokenizer = _Tokenizer()
+
+        def __call__(self, inputs, output_fields=None):
+            return [record]
+
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setitem(
+        sys.modules, "transformers", types.SimpleNamespace(pipeline=lambda **kw: _Pipeline())
+    )
+    return ScopeGuardV2(backend="hf", model="m", **kwargs)
+
+
+def test_hf_backend_reports_usage_when_the_checkpoint_counts_tokens(monkeypatch):
+    """A checkpoint whose pipeline returns token counts must produce usage, with the
+    system prompt subtracted the way the vllm backends subtract it."""
+    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT
+
+    guard = _hf_guard(
+        monkeypatch,
+        record={
+            "generated_text": '{"scope_class": "Directly Supported"}',
+            "prompt_tokens": 500,
+            "completion_tokens": 8,
+        },
+    )
+
+    result = guard.validate(
+        "hello", ai_service_description="A test service.", output_fields=["scope_class"]
+    )
+
+    overhead = len(SYSTEM_PROMPT.split())
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 500 - overhead
+    assert result.usage.completion_tokens == 8
+    assert result.usage.total_tokens == 500 + 8 - overhead
+
+
+def test_hf_backend_leaves_usage_none_for_a_checkpoint_that_does_not_count(monkeypatch):
+    """The pipeline versions with the weights, not with this library, so a checkpoint
+    published before the counts existed simply omits them and must still validate."""
+    guard = _hf_guard(
+        monkeypatch,
+        record={"generated_text": '{"scope_class": "Directly Supported"}'},
+    )
+
+    result = guard.validate(
+        "hello", ai_service_description="A test service.", output_fields=["scope_class"]
+    )
+
+    assert result.scope_class.value == "Directly Supported"
+    assert result.usage is None
+
+
+def test_hf_backend_can_be_asked_to_count_the_system_prompt(monkeypatch):
+    """The same switch the vllm backends take, so all three agree on what they charge."""
+    guard = _hf_guard(
+        monkeypatch,
+        record={
+            "generated_text": '{"scope_class": "Directly Supported"}',
+            "prompt_tokens": 500,
+            "completion_tokens": 8,
+        },
+        count_system_prompt_in_usage=True,
+    )
+
+    result = guard.validate(
+        "hello", ai_service_description="A test service.", output_fields=["scope_class"]
+    )
+
+    assert result.usage.prompt_tokens == 500
+    assert result.usage.total_tokens == 508
+
+
+def _postprocess(prompt_rows, generated_rows, *, eos_token_id, pad_token_id):
+    """Drive the shipped pipeline's postprocess over canned ids.
+
+    Built by hand rather than through `__init__`, which would load a model.
+    """
+    import torch
+
+    from hf_pipeline.scope_guard_v2 import ScopeGuardV2Pipeline
+
+    class _Tokenizer:
+        eos_token_id_ = eos_token_id
+
+        def __init__(self):
+            self.eos_token_id = eos_token_id
+            self.pad_token_id = pad_token_id
+
+        def decode(self, ids, skip_special_tokens=True):
+            return '{"scope_class": "Directly Supported"}'
+
+    pipe = ScopeGuardV2Pipeline.__new__(ScopeGuardV2Pipeline)
+    pipe.tokenizer = _Tokenizer()
+
+    input_ids = torch.tensor(prompt_rows)
+    attention_mask = torch.tensor(
+        [[0 if t == pad_token_id else 1 for t in row] for row in prompt_rows]
+    )
+    output_ids = torch.tensor(
+        [p + g for p, g in zip(prompt_rows, generated_rows)]
+    )
+    return pipe.postprocess(
+        {
+            "output_ids": output_ids,
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+        }
+    )
+
+
+def test_pipeline_counts_the_real_prompt_length_under_left_padding():
+    """The tokenizer pads on the left, so the padded width overstates every prompt
+    but the longest one in the batch."""
+    records = _postprocess(
+        prompt_rows=[[0, 0, 11, 12, 13], [21, 22, 23, 24, 25]],
+        generated_rows=[[31, 99], [41, 99]],
+        eos_token_id=99,
+        pad_token_id=0,
+    )
+    assert [r["prompt_tokens"] for r in records] == [3, 5]
+
+
+def test_pipeline_counts_the_completion_up_to_eos():
+    """A sequence that stops early is padded out to the longest completion, and those
+    pads are not tokens anyone generated."""
+    records = _postprocess(
+        prompt_rows=[[11, 12], [21, 22]],
+        generated_rows=[[31, 99, 0, 0], [41, 42, 43, 99]],
+        eos_token_id=99,
+        pad_token_id=0,
+    )
+    assert [r["completion_tokens"] for r in records] == [2, 4]

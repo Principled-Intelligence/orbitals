@@ -59,6 +59,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         max_num_seqs: int = 2,
         gpu_memory_utilization: float = 0.9,
         include_default_safety_principles: bool = False,
+        count_system_prompt_in_usage: bool = False,
     ):
         from ...utils import maybe_configure_gpu_usage
 
@@ -85,6 +86,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         self.tokenizer = _get_tokenizer(self.model)
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.count_system_prompt_in_usage = count_system_prompt_in_usage
 
     def _validate(
         self,
@@ -136,11 +138,24 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         )
         outputs = self.llm.generate(prompts, sampling_params, use_tqdm=False)
 
+        system_prompt_tokens = (
+            0
+            if self.count_system_prompt_in_usage
+            else len(self.tokenizer.encode(SYSTEM_PROMPT))
+        )
+
         results = []
         for output in outputs:
             text = output.outputs[0].text
             validated = response_model.model_validate(json.loads(text))
-            results.append(_to_output(validated, self.model, usage=None))
+            prompt_tokens = len(output.prompt_token_ids) - system_prompt_tokens
+            completion_tokens = len(output.outputs[0].token_ids)
+            usage = LLMUsage(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+            )
+            results.append(_to_output(validated, self.model, usage))
         return results
 
 

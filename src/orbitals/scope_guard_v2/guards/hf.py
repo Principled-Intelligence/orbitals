@@ -6,13 +6,16 @@ import pydantic
 if TYPE_CHECKING:
     from transformers import pipeline  # noqa: F401
 
-from ...types import AIServiceDescriptionV2
+from ...types import AIServiceDescriptionV2, LLMUsage
 from ..modeling import ScopeGuardV2Input, ScopeGuardV2Output
-from ..prompting import check_shipped_system_prompt, response_model_for
+from ..prompting import SYSTEM_PROMPT, check_shipped_system_prompt, response_model_for
 from .base import ScopeGuardV2
 
 
-def _parse(generated_text: str, selection: tuple[str, ...], model: str) -> ScopeGuardV2Output:
+def _parse(
+    record: dict, selection: tuple[str, ...], model: str, usage: LLMUsage | None
+) -> ScopeGuardV2Output:
+    generated_text = record["generated_text"]
     try:
         parsed_obj = json.loads(generated_text)
     except json.JSONDecodeError:
@@ -28,7 +31,7 @@ def _parse(generated_text: str, selection: tuple[str, ...], model: str) -> Scope
         scope_class=data["scope_class"],
         suggested_response=data.get("suggested_response"),
         model=model,
-        usage=None,
+        usage=usage,
     )
 
 
@@ -43,6 +46,7 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
         max_new_tokens: int = 3000,
         do_sample: bool = False,
         include_default_safety_principles: bool = False,
+        count_system_prompt_in_usage: bool = False,
         **kwargs,
     ):
         from ...utils import maybe_configure_gpu_usage
@@ -70,6 +74,41 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
             do_sample=do_sample,
             **kwargs,
         )  # type: ignore # ty: ignore[no-matching-overload]
+        self.count_system_prompt_in_usage = count_system_prompt_in_usage
+        self._cached_system_prompt_tokens: int | None = None
+
+    @property
+    def _system_prompt_tokens(self) -> int:
+        """Overhead to exclude from a caller's prompt count.
+
+        Resolved on first use rather than at construction: it needs the pipeline's
+        tokenizer, and a checkpoint whose pipeline reports no counts never asks.
+        """
+        if self.count_system_prompt_in_usage:
+            return 0
+        if self._cached_system_prompt_tokens is None:
+            self._cached_system_prompt_tokens = len(
+                self._pipeline.tokenizer.encode(SYSTEM_PROMPT)
+            )
+        return self._cached_system_prompt_tokens
+
+    def _usage(self, record: dict) -> LLMUsage | None:
+        """Token counts, when the checkpoint's pipeline reports them.
+
+        That pipeline ships inside the model repo and versions independently of this
+        library, so a checkpoint published before the counts existed simply omits the
+        keys. Reading them defensively is what keeps those checkpoints working.
+        """
+        prompt_tokens = record.get("prompt_tokens")
+        completion_tokens = record.get("completion_tokens")
+        if prompt_tokens is None or completion_tokens is None:
+            return None
+        prompt_tokens -= self._system_prompt_tokens
+        return LLMUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        )
 
     def _validate(
         self,
@@ -81,10 +120,10 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
         **kwargs,
     ) -> ScopeGuardV2Output:
         selection = self._resolve_output_fields(output_fields, skip_evidences)
-        generated_text = self._pipeline(
+        record = self._pipeline(
             (conversation, ai_service_description), output_fields=selection
-        )[0]["generated_text"]
-        return _parse(generated_text, selection, self.model)
+        )[0]
+        return _parse(record, selection, self.model, self._usage(record))
 
     def _batch_validate(
         self,
@@ -106,5 +145,6 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
 
         pipeline_outputs = self._pipeline(pipeline_inputs, output_fields=selection)
         return [
-            _parse(out[0]["generated_text"], selection, self.model) for out in pipeline_outputs
+            _parse(out[0], selection, self.model, self._usage(out[0]))
+            for out in pipeline_outputs
         ]

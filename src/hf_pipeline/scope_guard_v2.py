@@ -100,11 +100,13 @@ class ScopeGuardV2Pipeline(Pipeline):
         return {
             "output_ids": outputs,
             "input_ids": tokenized["input_ids"],
+            "attention_mask": tokenized["attention_mask"],
         }
 
     def postprocess(self, model_outputs):
         output_ids = model_outputs["output_ids"]
         input_ids = model_outputs["input_ids"]
+        attention_mask = model_outputs["attention_mask"]
 
         results = []
         for i in range(output_ids.shape[0]):
@@ -113,6 +115,28 @@ class ScopeGuardV2Pipeline(Pipeline):
                 generated_ids,
                 skip_special_tokens=True,
             )
-            results.append({"generated_text": generated_output})
+            results.append(
+                {
+                    "generated_text": generated_output,
+                    "prompt_tokens": int(attention_mask[i].sum()),
+                    "completion_tokens": self._count_completion(generated_ids),
+                }
+            )
 
         return results
+
+    def _count_completion(self, generated_ids) -> int:
+        """How many tokens this sequence actually produced.
+
+        Generation pads every completion out to the longest one in the batch, so the
+        row is only as long as the slowest sibling. Counting to the first eos is
+        correct whether or not the checkpoint reuses eos as its pad token, which
+        counting non-pad tokens is not.
+        """
+        eos_token_id = self.tokenizer.eos_token_id
+        if eos_token_id is None:
+            return int(generated_ids.shape[0])
+        positions = (generated_ids == eos_token_id).nonzero()
+        if positions.numel() == 0:
+            return int(generated_ids.shape[0])
+        return int(positions[0].item()) + 1
