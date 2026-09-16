@@ -1397,3 +1397,99 @@ def test_scope_guard_v2_serving_rejects_an_empty_output_fields_env_var(monkeypat
     with pytest.raises(ValueError, match="names no fields"):
         with TestClient(serving_main.app):
             pass
+
+
+def _in_process_vllm_guard(
+    monkeypatch, *, prompt_token_ids, completion_token_ids, text, **kwargs
+):
+    """Build a `vllm` guard whose engine returns one canned generation.
+
+    The real backend never reaches vLLM in the suite, so the fake has to supply the
+    two attributes the usage count is derived from: the prompt's token ids and the
+    completion's.
+    """
+    import sys
+    import types
+
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    class _Tokenizer:
+        def apply_chat_template(self, messages, **kwargs):
+            return "".join(m["content"] for m in messages)
+
+        def encode(self, text):
+            return text.split()
+
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.vllm._get_tokenizer", lambda name: _Tokenizer()
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm",
+        types.SimpleNamespace(
+            LLM=lambda **kw: types.SimpleNamespace(
+                generate=lambda prompts, params, use_tqdm=False: [
+                    types.SimpleNamespace(
+                        prompt_token_ids=prompt_token_ids,
+                        outputs=[
+                            types.SimpleNamespace(
+                                text=text, token_ids=completion_token_ids
+                            )
+                        ],
+                    )
+                ]
+            ),
+            SamplingParams=lambda **kw: object(),
+            sampling_params=types.SimpleNamespace(
+                StructuredOutputsParams=lambda **kw: object()
+            ),
+        ),
+    )
+    return ScopeGuardV2(backend="vllm", model="m", **kwargs)
+
+
+def test_vllm_backend_reports_usage_without_the_system_prompt(monkeypatch):
+    """The in process backend reported `usage=None`, so `--backend vllm` could not
+    show that a smaller selection buys a shorter completion.
+
+    The system prompt is fixed overhead the caller did not write, and `vllm-api`
+    already subtracts it, so the two backends must agree on what they charge for.
+    """
+    from orbitals.scope_guard_v2.prompting import SYSTEM_PROMPT
+
+    guard = _in_process_vllm_guard(
+        monkeypatch,
+        prompt_token_ids=list(range(500)),
+        completion_token_ids=list(range(8)),
+        text='{"scope_class": "Directly Supported"}',
+    )
+
+    result = guard.validate(
+        "hello", ai_service_description="A test service.", output_fields=["scope_class"]
+    )
+
+    overhead = len(SYSTEM_PROMPT.split())
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 500 - overhead
+    assert result.usage.completion_tokens == 8
+    assert result.usage.total_tokens == 500 + 8 - overhead
+
+
+def test_vllm_backend_can_be_asked_to_count_the_system_prompt(monkeypatch):
+    """`vllm-api` takes `count_system_prompt_in_usage`; the in process backend needs
+    the same switch or the two disagree on the same deployment."""
+    guard = _in_process_vllm_guard(
+        monkeypatch,
+        prompt_token_ids=list(range(500)),
+        completion_token_ids=list(range(8)),
+        text='{"scope_class": "Directly Supported"}',
+        count_system_prompt_in_usage=True,
+    )
+
+    result = guard.validate(
+        "hello", ai_service_description="A test service.", output_fields=["scope_class"]
+    )
+
+    assert result.usage.prompt_tokens == 500
+    assert result.usage.total_tokens == 508
