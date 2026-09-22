@@ -314,7 +314,11 @@ class ScopeGuardV2(BaseScopeGuardV2):
 
         Reads the class distribution from one forward pass. For Predefined Answer the
         response text comes back as well: the description's own entry when it lists
-        them, a generated reply otherwise (`resolve_predefined=False` skips it)."""
+        them, a generated reply otherwise (`resolve_predefined=False` skips it).
+
+        Raises:
+            ValueError: If the chosen class token is absent from the top logprobs.
+        """
         conversation = self._validate_conversation(conversation)
         include = self._resolve_include_default_safety_principles(
             include_default_safety_principles
@@ -467,7 +471,11 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
 
         Reads the class distribution from one forward pass. For Predefined Answer the
         response text comes back as well: the description's own entry when it lists
-        them, a generated reply otherwise (`resolve_predefined=False` skips it)."""
+        them, a generated reply otherwise (`resolve_predefined=False` skips it).
+
+        Raises:
+            ValueError: If the chosen class token is absent from the top logprobs.
+        """
         conversation = self._validate_conversation(conversation)
         include = self._resolve_include_default_safety_principles(
             include_default_safety_principles

@@ -228,6 +228,15 @@ async def test_classify_single_candidate_needs_no_second_call(monkeypatch) -> No
     assert len(captured) == 1
 
 
+async def test_classify_raises_when_the_chosen_class_token_is_absent(monkeypatch) -> None:
+    """A top-k with no class token must not be reported as Directly Supported."""
+    _install_session(monkeypatch, [_class_payload({"<unused>": -0.2})])
+    sg = AsyncScopeGuardV2(backend="vllm-api", model="m", vllm_serving_url="http://x")
+
+    with pytest.raises(ValueError, match="not in the top logprobs"):
+        await sg.classify("q", ai_service_description="d")
+
+
 async def test_classify_rejects_non_candidate_text(monkeypatch) -> None:
     _install_session(
         monkeypatch,

@@ -55,6 +55,12 @@ def _classification(
 ) -> ScopeGuardV2Classification:
     probabilities = class_probabilities(top_logprobs, first_tokens, temperature)
     best = max(probabilities, key=probabilities.__getitem__)
+    # A class token missing from the top-k is given a shared floor, so a readout
+    # that saw none of them ties and would otherwise report Directly Supported.
+    if first_tokens[best] not in top_logprobs:
+        raise ValueError(
+            f"first token for {best!r} was not in the top logprobs"
+        )
     return ScopeGuardV2Classification(
         scope_class=ScopeClass(best),
         probabilities=probabilities,
