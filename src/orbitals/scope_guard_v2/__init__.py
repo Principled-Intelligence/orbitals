@@ -1,5 +1,9 @@
 from .guards import AsyncScopeGuardV2, ScopeGuardV2
-from .modeling import ScopeClass, ScopeGuardV2Output
+from .modeling import (
+    ScopeClass,
+    ScopeGuardV2Classification,
+    ScopeGuardV2Output,
+)
 from .safety_principles import (
     ADDITIONAL_SAFETY_RULES,
     augment_with_default_safety_principles_v2,
@@ -10,6 +14,7 @@ __all__ = [
     "AsyncScopeGuardV2",
     "ScopeClass",
     "ScopeGuardV2",
+    "ScopeGuardV2Classification",
     "ScopeGuardV2Output",
     "augment_with_default_safety_principles_v2",
 ]

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 from ...types import AIServiceDescriptionV2
 from ..prompting import ALL_FIELDS, resolve_selection
 from ..modeling import (
+    ScopeGuardV2Classification,
     ScopeGuardV2Input,
     ScopeGuardV2InputTypeAdapter,
     ScopeGuardV2Output,
@@ -300,6 +301,44 @@ class ScopeGuardV2(BaseScopeGuardV2):
     ) -> list[ScopeGuardV2Output]:
         raise NotImplementedError
 
+    def classify(
+        self,
+        conversation: str | dict | list[dict],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2,
+        resolve_predefined: bool = True,
+        include_default_safety_principles: bool | None = None,
+        **kwargs,
+    ) -> ScopeGuardV2Classification:
+        """Classify with a probability per class; see `ScopeGuardV2Classification`.
+
+        Reads the class distribution from one forward pass. For Predefined Answer the
+        response text comes back as well: the description's own entry when it lists
+        them, a generated reply otherwise (`resolve_predefined=False` skips it)."""
+        conversation = self._validate_conversation(conversation)
+        include = self._resolve_include_default_safety_principles(
+            include_default_safety_principles
+        )
+        ai_service_description = self._maybe_augment(ai_service_description, include)
+        return self._classify(
+            conversation,
+            ai_service_description=ai_service_description,
+            resolve_predefined=resolve_predefined,
+            **kwargs,
+        )
+
+    def _classify(
+        self,
+        conversation: ScopeGuardV2Input,
+        *,
+        ai_service_description: str | AIServiceDescriptionV2,
+        resolve_predefined: bool = True,
+        **kwargs,
+    ) -> ScopeGuardV2Classification:
+        raise NotImplementedError(
+            f"classify() is not available on the {self.backend!r} backend"
+        )
+
 
 class AsyncScopeGuardV2(BaseScopeGuardV2):
     @overload
@@ -414,3 +453,41 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
         raise NotImplementedError
+
+    async def classify(
+        self,
+        conversation: str | dict | list[dict],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2,
+        resolve_predefined: bool = True,
+        include_default_safety_principles: bool | None = None,
+        **kwargs,
+    ) -> ScopeGuardV2Classification:
+        """Classify with a probability per class; see `ScopeGuardV2Classification`.
+
+        Reads the class distribution from one forward pass. For Predefined Answer the
+        response text comes back as well: the description's own entry when it lists
+        them, a generated reply otherwise (`resolve_predefined=False` skips it)."""
+        conversation = self._validate_conversation(conversation)
+        include = self._resolve_include_default_safety_principles(
+            include_default_safety_principles
+        )
+        ai_service_description = self._maybe_augment(ai_service_description, include)
+        return await self._classify(
+            conversation,
+            ai_service_description=ai_service_description,
+            resolve_predefined=resolve_predefined,
+            **kwargs,
+        )
+
+    async def _classify(
+        self,
+        conversation: ScopeGuardV2Input,
+        *,
+        ai_service_description: str | AIServiceDescriptionV2,
+        resolve_predefined: bool = True,
+        **kwargs,
+    ) -> ScopeGuardV2Classification:
+        raise NotImplementedError(
+            f"classify() is not available on the {self.backend!r} backend"
+        )
