@@ -31,6 +31,8 @@ async def lifespan(app: FastAPI):
         skip_evidences=(os.environ.get("SCOPE_GUARD_V2_SKIP_EVIDENCES") == "1") or None,
         output_fields=output_fields,
         vllm_serving_url=os.environ["SCOPE_GUARD_V2_VLLM_SERVING_URL"],
+        # Divides the class logits in `classify`; 1.0 is the model as released.
+        decision_temperature=float(os.environ.get("SCOPE_GUARD_V2_DECISION_TEMPERATURE", "1.0")),
     )
 
     yield
@@ -133,3 +135,49 @@ async def batch_validate(
         )
         for result in results
     ]
+
+
+class ScopeGuardV2ClassificationResponse(BaseModel):
+    scope_class: ScopeClass
+    probabilities: dict[str, float]
+    confidence: float
+    temperature: float
+    predefined_response: str | None
+    model: str
+    usage: LLMUsage | None
+    time_taken: float
+
+
+@app.post(
+    "/orbitals/scope-guard-v2/classify", response_model=ScopeGuardV2ClassificationResponse
+)
+async def classify(
+    conversation: ScopeGuardV2Input,
+    ai_service_description: Annotated[str | AIServiceDescriptionV2, Body()],
+    resolve_predefined: Annotated[bool, Body()] = True,
+    model: Annotated[str | None, Body()] = None,
+    include_default_safety_principles: Annotated[bool | None, Body()] = None,
+) -> ScopeGuardV2ClassificationResponse:
+    """A probability per class; the predefined response is selected, not generated.
+    See README.scope-guard-v2.md, "Fast classification with probabilities"."""
+    global scope_guard
+
+    start_time = time.time()
+    result = await scope_guard.classify(
+        conversation,
+        ai_service_description=ai_service_description,
+        resolve_predefined=resolve_predefined,
+        include_default_safety_principles=include_default_safety_principles,
+        model=model,
+    )
+    end_time = time.time()
+    return ScopeGuardV2ClassificationResponse(
+        scope_class=result.scope_class,
+        probabilities=result.probabilities,
+        confidence=result.confidence,
+        temperature=result.temperature,
+        predefined_response=result.predefined_response,
+        model=result.model,
+        usage=result.usage,
+        time_taken=end_time - start_time,
+    )

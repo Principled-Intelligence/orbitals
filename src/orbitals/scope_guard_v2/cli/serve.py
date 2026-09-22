@@ -55,6 +55,13 @@ def serve(
     vllm_gpu_memory_utilization: float = typer.Option(
         0.9, help="GPU memory utilization for vLLM"
     ),
+    decision_temperature: float = typer.Option(
+        1.0,
+        help=(
+            "Temperature dividing the class logits in /classify. 1.0 is the model as "
+            "released; fit it on a labelled sample of your traffic."
+        ),
+    ),
     vllm_extra_args: str | None = typer.Option(
         None, help="Extra arguments to pass to the vLLM server"
     ),
@@ -74,8 +81,11 @@ def serve(
     for conflict in conflicts:
         typer.echo(f"Warning: {conflict.message}", err=True)
 
+    if decision_temperature <= 0:
+        raise typer.BadParameter("must be positive", param_hint="--decision-temperature")
     os.environ["SCOPE_GUARD_V2_VLLM_MODEL"] = vllm_model
     os.environ["SCOPE_GUARD_V2_VLLM_SERVING_URL"] = f"http://localhost:{vllm_port}"
+    os.environ["SCOPE_GUARD_V2_DECISION_TEMPERATURE"] = str(decision_temperature)
     # The selection carries the --skip-evidences decision already, so the server is
     # handed one unambiguous value and never re-derives it.
     os.environ.pop("SCOPE_GUARD_V2_SKIP_EVIDENCES", None)

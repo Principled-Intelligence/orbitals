@@ -13,11 +13,21 @@ if TYPE_CHECKING:
     import vllm  # noqa: F401
 
 from ...types import AIServiceDescriptionV2, LLMUsage
-from ..modeling import ScopeGuardV2Input, ScopeGuardV2Output
+from ..modeling import (
+    ScopeClass,
+    ScopeGuardV2Classification,
+    ScopeGuardV2Input,
+    ScopeGuardV2Output,
+)
 from ..prompting import (
+    CLASS_PREFIX,
+    PREDEFINED_PREFIX,
     SYSTEM_PROMPT,
     build_prompt,
     check_shipped_system_prompt,
+    class_first_tokens,
+    class_probabilities,
+    predefined_candidates,
     response_model_for,
 )
 from .base import AsyncScopeGuardV2, ScopeGuardV2
@@ -28,6 +38,82 @@ def _get_tokenizer(model_name: str) -> transformers.PreTrainedTokenizer:
     import transformers
 
     return transformers.AutoTokenizer.from_pretrained(model_name)
+
+
+@lru_cache(maxsize=8)
+def _class_tokens(tokenizer_name: str) -> dict[str, str]:
+    return class_first_tokens(_get_tokenizer(tokenizer_name))
+
+
+def _classification(
+    top_logprobs: dict[str, float],
+    first_tokens: dict[str, str],
+    *,
+    temperature: float,
+    model: str,
+    usage: LLMUsage | None,
+) -> ScopeGuardV2Classification:
+    probabilities = class_probabilities(top_logprobs, first_tokens, temperature)
+    best = max(probabilities, key=probabilities.__getitem__)
+    # A class token missing from the top-k is given a shared floor, so a readout
+    # that saw none of them ties and would otherwise report Directly Supported.
+    if first_tokens[best] not in top_logprobs:
+        raise ValueError(
+            f"first token for {best!r} was not in the top logprobs"
+        )
+    return ScopeGuardV2Classification(
+        scope_class=ScopeClass(best),
+        probabilities=probabilities,
+        confidence=probabilities[best],
+        temperature=temperature,
+        model=model,
+        usage=usage,
+    )
+
+
+def _grammar_choices(candidates: list[str]) -> list[str]:
+    """The texts the constrained-decoding grammar is built from.
+
+    vLLM's grammar backend cannot compile a `choice` over texts containing line breaks
+    (a multi-line address, for instance), so whitespace runs are collapsed to one space
+    for the grammar only. The entry returned to the caller is the original, by position.
+    """
+    return [" ".join(c.split()) for c in candidates]
+
+
+def _selected(text: str, candidates: list[str]) -> str:
+    """Return the description's own entry the constrained completion corresponds to."""
+    choices = _grammar_choices(candidates)
+    if text in choices:
+        return candidates[choices.index(text)]
+    stripped = text.strip()
+    if stripped in choices:
+        return candidates[choices.index(stripped)]
+    raise ValueError(f"constrained decoding returned a non-candidate: {text!r}")
+
+
+# The generated reply is a JSON string value; the model closes it with `"}`.
+_RESPONSE_STOP = '"}'
+
+
+def _generated(text: str) -> str:
+    """Unescape a generated JSON string value, tolerating a missing closing quote."""
+    body = text.split(_RESPONSE_STOP, 1)[0]
+    try:
+        value = json.loads(f'"{body}"')
+    except json.JSONDecodeError:
+        return body.strip()
+    return str(value).strip()
+
+
+def _add_usage(a: LLMUsage | None, b: LLMUsage | None) -> LLMUsage | None:
+    if a is None or b is None:
+        return a or b
+    return LLMUsage(
+        prompt_tokens=a.prompt_tokens + b.prompt_tokens,
+        completion_tokens=a.completion_tokens + b.completion_tokens,
+        total_tokens=a.total_tokens + b.total_tokens,
+    )
 
 
 def _to_output(
@@ -60,6 +146,8 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         gpu_memory_utilization: float = 0.9,
         include_default_safety_principles: bool = False,
         count_system_prompt_in_usage: bool = False,
+        decision_temperature: float = 1.0,
+        decision_logprobs: int = 20,
     ):
         from ...utils import maybe_configure_gpu_usage
 
@@ -87,6 +175,83 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.count_system_prompt_in_usage = count_system_prompt_in_usage
+        self.decision_temperature = decision_temperature
+        self.decision_logprobs = decision_logprobs
+
+    def _offline_usage(self, output) -> LLMUsage:
+        system_prompt_tokens = (
+            0
+            if self.count_system_prompt_in_usage
+            else len(self.tokenizer.encode(SYSTEM_PROMPT))
+        )
+        prompt_tokens = len(output.prompt_token_ids) - system_prompt_tokens
+        completion_tokens = len(output.outputs[0].token_ids)
+        return LLMUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        )
+
+    def _classify(
+        self,
+        conversation: ScopeGuardV2Input,
+        *,
+        ai_service_description: str | AIServiceDescriptionV2,
+        resolve_predefined: bool = True,
+        **kwargs,
+    ) -> ScopeGuardV2Classification:
+        import vllm
+
+        first_tokens = _class_tokens(self.model)
+        prompt = (
+            build_prompt(
+                self.tokenizer, conversation, ai_service_description, output_fields=["scope_class"]
+            )
+            + CLASS_PREFIX
+        )
+        params = vllm.SamplingParams(max_tokens=1, temperature=0.0, logprobs=self.decision_logprobs)
+        output = self.llm.generate([prompt], params, use_tqdm=False)[0]
+        step = output.outputs[0].logprobs[0]
+        top = {lp.decoded_token: lp.logprob for lp in step.values()}
+        result = _classification(
+            top,
+            first_tokens,
+            temperature=self.decision_temperature,
+            model=self.model,
+            usage=self._offline_usage(output),
+        )
+        if result.scope_class is not ScopeClass.PREDEFINED_ANSWER or not resolve_predefined:
+            return result
+        candidates = [r for _, r in predefined_candidates(ai_service_description)]
+        if len(candidates) == 1:
+            result.predefined_response = candidates[0]
+            return result
+        prompt = (
+            build_prompt(
+                self.tokenizer,
+                conversation,
+                ai_service_description,
+                output_fields=["scope_class", "suggested_response"],
+            )
+            + PREDEFINED_PREFIX
+        )
+        if candidates:
+            params = vllm.SamplingParams(
+                max_tokens=self.max_tokens,
+                temperature=0.0,
+                structured_outputs=vllm.sampling_params.StructuredOutputsParams(
+                    choice=_grammar_choices(candidates)
+                ),
+            )
+        else:
+            params = vllm.SamplingParams(
+                max_tokens=self.max_tokens, temperature=self.temperature, stop=[_RESPONSE_STOP]
+            )
+        output = self.llm.generate([prompt], params, use_tqdm=False)[0]
+        text = output.outputs[0].text
+        result.predefined_response = _selected(text, candidates) if candidates else _generated(text)
+        result.usage = _add_usage(result.usage, self._offline_usage(output))
+        return result
 
     def _validate(
         self,
@@ -173,6 +338,8 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         chat_templating_tokenizer: str | None = None,
         count_system_prompt_in_usage: bool = False,
         include_default_safety_principles: bool = False,
+        decision_temperature: float = 1.0,
+        decision_logprobs: int = 20,
     ):
         super().__init__(
             backend,
@@ -182,6 +349,8 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         )
         if model is None:
             raise ValueError("A model name must be provided for AsyncScopeGuardV2.")
+        self.decision_temperature = decision_temperature
+        self.decision_logprobs = decision_logprobs
         self.default_model_name = model
         self.default_tokenizer_name = (
             chat_templating_tokenizer
@@ -264,6 +433,97 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
             total_tokens=response_json["usage"]["total_tokens"] - system_prompt_tokens,
         )
         return _to_output(validated, model_name, usage)
+
+    async def _completion(self, body: dict) -> dict:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.vllm_serving_url}/v1/completions",
+                json=body,
+                headers={"Content-Type": "application/json"},
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
+
+    def _api_usage(self, response_json: dict, tokenizer) -> LLMUsage:
+        system_prompt_tokens = (
+            0 if self.count_system_prompt_in_usage else len(tokenizer.encode(SYSTEM_PROMPT))
+        )
+        u = response_json["usage"]
+        return LLMUsage(
+            prompt_tokens=u["prompt_tokens"] - system_prompt_tokens,
+            completion_tokens=u["completion_tokens"],
+            total_tokens=u["total_tokens"] - system_prompt_tokens,
+        )
+
+    async def _classify(
+        self,
+        conversation: ScopeGuardV2Input,
+        *,
+        ai_service_description: str | AIServiceDescriptionV2,
+        resolve_predefined: bool = True,
+        model: str | None = None,
+        chat_templating_tokenizer: str | None = None,
+        **kwargs,
+    ) -> ScopeGuardV2Classification:
+        tokenizer_name = chat_templating_tokenizer or model or self.default_tokenizer_name
+        tokenizer = _get_tokenizer(tokenizer_name)
+        first_tokens = _class_tokens(tokenizer_name)
+        model_name = model if model is not None else self.default_model_name
+
+        prompt = (
+            build_prompt(
+                tokenizer, conversation, ai_service_description, output_fields=["scope_class"]
+            )
+            + CLASS_PREFIX
+        )
+        response_json = await self._completion(
+            {
+                "model": model_name,
+                "prompt": prompt,
+                "max_tokens": 1,
+                "temperature": 0.0,
+                "logprobs": self.decision_logprobs,
+            }
+        )
+        top = response_json["choices"][0]["logprobs"]["top_logprobs"][0]
+        result = _classification(
+            top,
+            first_tokens,
+            temperature=self.decision_temperature,
+            model=model_name,
+            usage=self._api_usage(response_json, tokenizer),
+        )
+        if result.scope_class is not ScopeClass.PREDEFINED_ANSWER or not resolve_predefined:
+            return result
+        candidates = [r for _, r in predefined_candidates(ai_service_description)]
+        if len(candidates) == 1:
+            result.predefined_response = candidates[0]
+            return result
+
+        prompt = (
+            build_prompt(
+                tokenizer,
+                conversation,
+                ai_service_description,
+                output_fields=["scope_class", "suggested_response"],
+            )
+            + PREDEFINED_PREFIX
+        )
+        body: dict = {"model": model_name, "prompt": prompt, "max_tokens": self.vllm_max_tokens}
+        if candidates:
+            # Constrained to the listed texts: the model picks, the customer's wording is kept.
+            body |= {
+                "temperature": 0.0,
+                "structured_outputs": {"choice": _grammar_choices(candidates)},
+            }
+        else:
+            # No list to choose from: generate the reply, as `validate` would.
+            body |= {"temperature": self.vllm_temperature, "stop": [_RESPONSE_STOP]}
+        response_json = await self._completion(body)
+        text = response_json["choices"][0]["text"]
+        result.predefined_response = _selected(text, candidates) if candidates else _generated(text)
+        result.usage = _add_usage(result.usage, self._api_usage(response_json, tokenizer))
+        return result
 
     async def _validate(
         self,
