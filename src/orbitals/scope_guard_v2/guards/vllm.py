@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from functools import lru_cache
-from typing import TYPE_CHECKING, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 import aiohttp
 import pydantic
@@ -134,7 +134,14 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         include_default_safety_principles: bool = False,
         count_system_prompt_in_usage: bool = False,
         decision_temperature: float = 1.0,
+        vllm_kwargs: dict[str, Any] | None = None,
     ):
+        """Load the model into an in-process vLLM engine.
+
+        Args:
+            vllm_kwargs: Further `vllm.LLM` engine arguments, such as
+                `enable_prefix_caching` or `max_num_batched_tokens`.
+        """
         from ...utils import maybe_configure_gpu_usage
 
         maybe_configure_gpu_usage()
@@ -156,6 +163,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
             max_model_len=max_model_len,
             max_num_seqs=max_num_seqs,
             gpu_memory_utilization=gpu_memory_utilization,
+            **(vllm_kwargs or {}),
         )
         self.tokenizer = _get_tokenizer(self.model)
         self.temperature = temperature

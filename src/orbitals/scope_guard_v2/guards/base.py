@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Iterable, Literal, Sequence, overload
+from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, overload
 
 from pydantic import ValidationError
 
@@ -188,6 +188,9 @@ class ScopeGuardV2(BaseScopeGuardV2):
         max_num_seqs: int = 2,
         gpu_memory_utilization: float = 0.9,
         include_default_safety_principles: bool = False,
+        count_system_prompt_in_usage: bool = False,
+        decision_temperature: float = 1.0,
+        vllm_kwargs: dict[str, Any] | None = None,
     ) -> VLLMScopeGuardV2: ...
 
     @overload
