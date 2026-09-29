@@ -173,3 +173,37 @@ async def classify(
     return ScopeGuardV2ClassificationResponse(
         **result.model_dump(), time_taken=end_time - start_time
     )
+
+
+@app.post(
+    "/orbitals/scope-guard-v2/batch-classify",
+    response_model=list[ScopeGuardV2ClassificationResponse],
+)
+async def batch_classify(
+    conversations: list[ScopeGuardV2Input],
+    ai_service_description: str | AIServiceDescriptionV2 | None = Body(None),
+    ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = Body(
+        None
+    ),
+    resolve_predefined: Annotated[bool, Body()] = True,
+    model: Annotated[str | None, Body()] = None,
+    include_default_safety_principles: Annotated[bool | None, Body()] = None,
+) -> list[ScopeGuardV2ClassificationResponse]:
+    global scope_guard
+
+    start_time = time.time()
+    results = await scope_guard.batch_classify(
+        conversations,
+        ai_service_description=ai_service_description,
+        ai_service_descriptions=ai_service_descriptions,
+        resolve_predefined=resolve_predefined,
+        include_default_safety_principles=include_default_safety_principles,
+        model=model,
+    )
+    end_time = time.time()
+    return [
+        ScopeGuardV2ClassificationResponse(
+            **result.model_dump(), time_taken=end_time - start_time
+        )
+        for result in results
+    ]

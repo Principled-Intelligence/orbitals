@@ -331,8 +331,8 @@ def _offline_guard(monkeypatch, outputs: list[Any], captured: list[Any]):
     )
 
     def generate(prompts, params, use_tqdm=False):
-        captured.append((prompts[0], params))
-        return [outputs[len(captured) - 1]]
+        captured.append((prompts, params))
+        return [outputs.pop(0) for _ in prompts]
 
     fake_vllm = types.SimpleNamespace(
         LLM=lambda **kw: types.SimpleNamespace(generate=generate),
@@ -386,23 +386,256 @@ def test_offline_fast_classify_and_selection(monkeypatch) -> None:
 
     assert r.scope_class is ScopeClass.PREDEFINED_ANSWER and r.temperature == 1.0
     assert r.predefined_response == "I cannot provide medical diagnoses."
-    assert captured[0][0].endswith(CLASS_PREFIX) and captured[0][1]["max_tokens"] == 1
-    assert captured[1][1]["structured_outputs"] == {
+    assert captured[0][0][0].endswith(CLASS_PREFIX)
+    assert captured[0][1]["max_tokens"] == 1
+    assert captured[1][1][0]["structured_outputs"] == {
         "choice": [p.response for p in ASD.predefined_responses]
     }  # type: ignore[union-attr]
     assert r.usage is not None and r.usage.completion_tokens == 3
 
 
+def test_offline_batch_classify_batches_each_step(monkeypatch) -> None:
+    """One generate call reads every row's class; one more resolves only the
+    Predefined Answer rows, each with its own sampling params."""
+    captured: list[Any] = []
+    guard = _offline_guard(
+        monkeypatch,
+        [
+            _offline_output("x", [{1: _lp(TOKENS["Restricted"], -0.1)}]),
+            _offline_output("x", [{1: _lp(TOKENS["Predefined Answer"], -0.1)}]),
+            _offline_output("x", [{1: _lp(TOKENS["Predefined Answer"], -0.1)}]),
+            _offline_output("For help with your order call 345.", [{}, {}]),
+            _offline_output('Call 345."}', [{}, {}, {}]),
+        ],
+        captured,
+    )
+
+    rs = guard.batch_classify(
+        ["how to make a bomb", "my order is late", "when are you open?"],
+        ai_service_descriptions=[ASD, ASD, "free text"],
+    )
+
+    assert [r.scope_class for r in rs] == [
+        ScopeClass.RESTRICTED,
+        ScopeClass.PREDEFINED_ANSWER,
+        ScopeClass.PREDEFINED_ANSWER,
+    ]
+    assert [r.predefined_response for r in rs] == [
+        None,
+        "For help with your order call 345.",
+        "Call 345.",
+    ]
+    assert len(captured) == 2 and len(captured[0][0]) == 3
+    choice_params, free_params = captured[1][1]
+    assert "choice" in choice_params["structured_outputs"]
+    assert free_params["stop"] == ['"}']
+    assert rs[1].usage is not None and rs[1].usage.completion_tokens == 3
+
+
+def test_batch_classify_checks_inputs_like_batch_validate(monkeypatch) -> None:
+    guard = _offline_guard(monkeypatch, [], [])
+
+    assert guard.batch_classify([], ai_service_description="d") == []
+    with pytest.raises(ValueError, match="Only one"):
+        guard.batch_classify(
+            ["q"], ai_service_description="d", ai_service_descriptions=["d"]
+        )
+    with pytest.raises(ValueError, match="Either"):
+        guard.batch_classify(["q"])
+    with pytest.raises(ValueError, match="number of conversations"):
+        guard.batch_classify(["q1", "q2"], ai_service_descriptions=["d"])
+
+
+async def test_vllm_api_batch_classify_sends_one_request_per_row(monkeypatch) -> None:
+    captured = _install_session(
+        monkeypatch,
+        [
+            _class_payload({TOKENS["Chit Chat"]: -0.01}),
+            _class_payload({TOKENS["Out of Scope"]: -0.01}),
+        ],
+    )
+    sg = AsyncScopeGuardV2(backend="vllm-api", model="m", vllm_serving_url="http://x")
+
+    rs = await sg.batch_classify(["hi", "weather?"], ai_service_description="d")
+
+    assert {r.scope_class for r in rs} == {
+        ScopeClass.CHIT_CHAT,
+        ScopeClass.OUT_OF_SCOPE,
+    }
+    assert len(captured) == 2
+    assert all(c["json"]["prompt"].endswith(CLASS_PREFIX) for c in captured)
+
+
 # --- other backends and serving ---------------------------------------------------------
 
 
-def test_classify_is_unavailable_on_the_hosted_api_backend() -> None:
-    sg = ScopeGuardV2(backend="api", api_key="k")
-    with pytest.raises(NotImplementedError, match="api"):
-        sg.classify("q", ai_service_description="d")
+def _classification_payload() -> dict:
+    return {
+        "scope_class": "Predefined Answer",
+        "probabilities": {
+            c.value: (0.94 if c is ScopeClass.PREDEFINED_ANSWER else 0.01)
+            for c in ScopeClass
+        },
+        "confidence": 0.94,
+        "temperature": 1.7,
+        "predefined_response": "R",
+        "model": "served",
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        "time_taken": 0.1,
+    }
 
 
-def test_serving_classify_endpoint_and_temperature_env(monkeypatch) -> None:
+def test_api_classify_posts_to_the_served_endpoint(monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    post = MagicMock()
+    post.return_value.json.return_value = _classification_payload()
+    monkeypatch.setattr("orbitals.scope_guard_v2.guards.api.requests.post", post)
+    sg = ScopeGuardV2(backend="api", api_url="http://x", api_key="k", model="m")
+
+    r = sg.classify("q", ai_service_description=ASD, resolve_predefined=False)
+
+    assert r.scope_class is ScopeClass.PREDEFINED_ANSWER and r.confidence == 0.94
+    assert r.predefined_response == "R" and r.temperature == 1.7
+    assert post.call_args.args[0] == "http://x/orbitals/scope-guard-v2/classify"
+    body = post.call_args.kwargs["json"]
+    assert body["model"] == "m" and body["conversation"] == "q"
+    assert body["resolve_predefined"] is False
+    assert body["ai_service_description"] == ASD.model_dump()
+    assert "skip_evidences" not in body and "output_fields" not in body
+    assert post.call_args.kwargs["headers"]["X-API-Key"] == "k"
+
+
+async def test_async_api_classify_posts_to_the_served_endpoint(monkeypatch) -> None:
+    from tests.test_scope_guard_v2 import _FakeAiohttpSession
+
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.api.aiohttp.ClientSession",
+        lambda: _FakeAiohttpSession(_classification_payload(), captured),
+    )
+    sg = AsyncScopeGuardV2(backend="api", api_url="http://x")
+
+    r = await sg.classify("q", ai_service_description="d")
+
+    assert r.scope_class is ScopeClass.PREDEFINED_ANSWER and r.model == "served"
+    assert captured["url"] == "http://x/orbitals/scope-guard-v2/classify"
+    assert captured["json"] == {
+        "conversation": "q",
+        "ai_service_description": "d",
+        "resolve_predefined": True,
+    }
+
+
+def test_api_batch_classify_posts_to_the_served_endpoint(monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    post = MagicMock()
+    post.return_value.json.return_value = [_classification_payload()] * 2
+    monkeypatch.setattr("orbitals.scope_guard_v2.guards.api.requests.post", post)
+    sg = ScopeGuardV2(backend="api", api_url="http://x")
+
+    rs = sg.batch_classify(["q1", "q2"], ai_service_descriptions=["d1", "d2"])
+
+    assert [r.predefined_response for r in rs] == ["R", "R"]
+    assert post.call_args.args[0] == "http://x/orbitals/scope-guard-v2/batch-classify"
+    assert post.call_args.kwargs["json"] == {
+        "conversations": ["q1", "q2"],
+        "ai_service_descriptions": ["d1", "d2"],
+        "resolve_predefined": True,
+    }
+
+
+async def test_async_api_batch_classify_posts_to_the_served_endpoint(
+    monkeypatch,
+) -> None:
+    from tests.test_scope_guard_v2 import _FakeAiohttpSession
+
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.api.aiohttp.ClientSession",
+        lambda: _FakeAiohttpSession([_classification_payload()], captured),
+    )
+    sg = AsyncScopeGuardV2(backend="api", api_url="http://x", model="m")
+
+    rs = await sg.batch_classify(
+        ["q"], ai_service_description="d", resolve_predefined=False
+    )
+
+    assert rs[0].scope_class is ScopeClass.PREDEFINED_ANSWER
+    assert captured["url"] == "http://x/orbitals/scope-guard-v2/batch-classify"
+    assert captured["json"] == {
+        "model": "m",
+        "conversations": ["q"],
+        "ai_service_description": "d",
+        "resolve_predefined": False,
+    }
+
+
+# --- hf backend -------------------------------------------------------------------------
+
+
+def test_hf_classify_reads_the_logits_and_constrains_selection(monkeypatch) -> None:
+    """The fake model prefers a token outside every candidate; the prefix constraint
+    must keep the reply on the listed entry it prefers next."""
+    torch = pytest.importorskip("torch")
+
+    eos = 999
+
+    class _Enc(dict):
+        input_ids = property(lambda self: self["input_ids"])
+
+        def to(self, device):
+            return self
+
+    class _HfTokenizer(_Tokenizer):
+        eos_token_id = pad_token_id = eos
+
+        def __call__(self, text, return_tensors=None):
+            ids = torch.tensor([self.encode(text)])
+            return _Enc(input_ids=ids, attention_mask=torch.ones_like(ids))
+
+        def decode(self, ids, skip_special_tokens=False):
+            return "".join(self.inv.get(int(i), f"<{i}>") for i in ids if int(i) != eos)
+
+    tok = _HfTokenizer()
+    first = class_first_tokens(tok)
+    order_words = tok.encode("For help with your order call 345.")
+    stray = tok.encode("Sorry")[0]
+
+    class _Model:
+        def __call__(self, input_ids, **kw):
+            logits = torch.full((1, input_ids.shape[1], 1000), -10.0)
+            logits[0, -1, tok.vocab[first["Predefined Answer"]]] = 5.0
+            logits[0, -1, tok.vocab[first["Restricted"]]] = 2.0
+            return types.SimpleNamespace(logits=logits)
+
+        def generate(self, input_ids, prefix_allowed_tokens_fn, **kw):
+            ids = input_ids[0]
+            prefs = [stray, *order_words, eos]
+            while True:
+                allowed = prefix_allowed_tokens_fn(0, ids)
+                nxt = min(allowed, key=lambda t: prefs.index(t) if t in prefs else 99)
+                ids = torch.cat([ids, torch.tensor([nxt])])
+                if nxt == eos:
+                    return ids[None]
+
+    pipe = types.SimpleNamespace(tokenizer=tok, model=_Model(), device="cpu")
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setitem(
+        sys.modules, "transformers", types.SimpleNamespace(pipeline=lambda **kw: pipe)
+    )
+    guard = ScopeGuardV2(backend="hf", model="m", decision_temperature=1.3)
+
+    r = guard.classify("my order is late", ai_service_description=ASD)
+
+    assert r.scope_class is ScopeClass.PREDEFINED_ANSWER and r.temperature == 1.3
+    assert r.probabilities["Predefined Answer"] > r.probabilities["Restricted"]
+    assert r.predefined_response == "For help with your order call 345."
+    assert r.usage is not None and r.usage.completion_tokens == 1 + len(order_words) + 1
+
+
+def test_serving_classify_endpoints_and_temperature_env(monkeypatch) -> None:
     from fastapi.testclient import TestClient
 
     from orbitals.scope_guard_v2.serving import main as serving_main
@@ -433,6 +666,13 @@ def test_serving_classify_endpoint_and_temperature_env(monkeypatch) -> None:
                 usage=LLMUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
             )
 
+        async def batch_classify(self, conversations, **kwargs):
+            seen["batch"] = kwargs
+            return [
+                await self.classify(c, ai_service_description=None)
+                for c in conversations
+            ]
+
     with TestClient(serving_main.app) as client:
         assert serving_main.scope_guard.decision_temperature == 1.7  # type: ignore[attr-defined]
         monkeypatch.setattr(serving_main, "scope_guard", _Stub())
@@ -444,6 +684,15 @@ def test_serving_classify_endpoint_and_temperature_env(monkeypatch) -> None:
                 "resolve_predefined": False,
             },
         )
+        batch = client.post(
+            "/orbitals/scope-guard-v2/batch-classify",
+            json={"conversations": ["a", "b"], "ai_service_descriptions": ["d1", "d2"]},
+        )
+    assert batch.status_code == 200, batch.text
+    assert [b["predefined_response"] for b in batch.json()] == ["R", "R"]
+    assert all("time_taken" in b for b in batch.json())
+    assert seen["batch"]["ai_service_descriptions"] == ["d1", "d2"]
+    assert seen["batch"]["resolve_predefined"] is True
     assert r.status_code == 200, r.text
     body = r.json()
     assert (

@@ -288,7 +288,9 @@ if result.predefined_response:
 - **Calibration.** As released the probabilities are over-confident. Divide the logits by a temperature fitted on a labelled sample from your traffic, set once per deployment: `decision_temperature` on the constructor or `--decision-temperature` on `orbitals scope-guard-v2 serve`; the value applied is reported as `temperature` on every result. On the public benchmarks the fitted value ranges from 1.2 to 2.8, about 1.7 overall; the class never depends on it. To try another value without redeploying, rescale the returned probabilities: `p_i' = softmax(log(p_i) / T)`, which is exact.
 - **Predefined answers come back as text.** When the class is `Predefined Answer` the response to send is in `predefined_response`. With an `AIServiceDescriptionV2` that lists `predefined_responses`, the matching entry is chosen by constrained decoding over the listed texts and returned verbatim, so the customer's own wording is kept; on the v2.3 test set this picks the right entry 94% of the time with two to five candidates (97% including single-entry lists). With a free-text description there is nothing to select from, so the reply is generated instead, as `validate` would. `resolve_predefined=False` skips this second step and returns the class alone.
 
-Available on the `vllm` and `vllm-api` backends and as `POST /orbitals/scope-guard-v2/classify` on the served API; the hosted `api` backend does not expose it yet.
+`batch_classify` takes a list of conversations with either one `ai_service_description` or one `ai_service_descriptions` entry per conversation, exactly like `batch_validate`, and returns one result per conversation.
+
+Available on every backend. `vllm`, `vllm-api` and `hf` run it against the model; the `api` backend calls `POST /orbitals/scope-guard-v2/classify` and `POST /orbitals/scope-guard-v2/batch-classify`, which `orbitals scope-guard-v2 serve` exposes. The hosted service does not serve those endpoints yet.
 
 ### Default Safety Principles
 

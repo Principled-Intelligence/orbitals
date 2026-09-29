@@ -343,6 +343,58 @@ class ScopeGuardV2(BaseScopeGuardV2):
             f"classify() is not available on the {self.backend!r} backend"
         )
 
+    def batch_classify(
+        self,
+        conversations: list[str] | list[dict] | list[list[dict]],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2 | None = None,
+        ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
+        resolve_predefined: bool = True,
+        include_default_safety_principles: bool | None = None,
+        **kwargs,
+    ) -> list[ScopeGuardV2Classification]:
+        """`classify` over many conversations; see `batch_validate` for the inputs.
+
+        Raises:
+            ValueError: If any row's chosen class token is absent from the top logprobs.
+        """
+        if len(conversations) == 0:
+            return []
+
+        validated_conversations = self._validate_conversations(conversations)
+        self._validate_ai_service_description_input(
+            validated_conversations, ai_service_description, ai_service_descriptions
+        )
+
+        include = self._resolve_include_default_safety_principles(
+            include_default_safety_principles
+        )
+        ai_service_description = self._maybe_augment(ai_service_description, include)
+        ai_service_descriptions = self._maybe_augment_list(
+            ai_service_descriptions, include
+        )
+
+        return self._batch_classify(
+            validated_conversations,
+            ai_service_description=ai_service_description,
+            ai_service_descriptions=ai_service_descriptions,
+            resolve_predefined=resolve_predefined,
+            **kwargs,
+        )
+
+    def _batch_classify(
+        self,
+        conversations: list[ScopeGuardV2Input],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2 | None = None,
+        ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
+        resolve_predefined: bool = True,
+        **kwargs,
+    ) -> list[ScopeGuardV2Classification]:
+        raise NotImplementedError(
+            f"batch_classify() is not available on the {self.backend!r} backend"
+        )
+
 
 class AsyncScopeGuardV2(BaseScopeGuardV2):
     @overload
@@ -498,4 +550,56 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
     ) -> ScopeGuardV2Classification:
         raise NotImplementedError(
             f"classify() is not available on the {self.backend!r} backend"
+        )
+
+    async def batch_classify(
+        self,
+        conversations: list[str] | list[dict] | list[list[dict]],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2 | None = None,
+        ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
+        resolve_predefined: bool = True,
+        include_default_safety_principles: bool | None = None,
+        **kwargs,
+    ) -> list[ScopeGuardV2Classification]:
+        """`classify` over many conversations; see `batch_validate` for the inputs.
+
+        Raises:
+            ValueError: If any row's chosen class token is absent from the top logprobs.
+        """
+        if len(conversations) == 0:
+            return []
+
+        validated_conversations = self._validate_conversations(conversations)
+        self._validate_ai_service_description_input(
+            validated_conversations, ai_service_description, ai_service_descriptions
+        )
+
+        include = self._resolve_include_default_safety_principles(
+            include_default_safety_principles
+        )
+        ai_service_description = self._maybe_augment(ai_service_description, include)
+        ai_service_descriptions = self._maybe_augment_list(
+            ai_service_descriptions, include
+        )
+
+        return await self._batch_classify(
+            validated_conversations,
+            ai_service_description=ai_service_description,
+            ai_service_descriptions=ai_service_descriptions,
+            resolve_predefined=resolve_predefined,
+            **kwargs,
+        )
+
+    async def _batch_classify(
+        self,
+        conversations: list[ScopeGuardV2Input],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2 | None = None,
+        ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
+        resolve_predefined: bool = True,
+        **kwargs,
+    ) -> list[ScopeGuardV2Classification]:
+        raise NotImplementedError(
+            f"batch_classify() is not available on the {self.backend!r} backend"
         )
