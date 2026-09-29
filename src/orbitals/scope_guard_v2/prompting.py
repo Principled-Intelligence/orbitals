@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import warnings
 from functools import lru_cache
 from pathlib import Path
@@ -24,7 +25,12 @@ from typing import Any, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
-from ..types import AIServiceDescriptionV2, Conversation, ConversationMessage
+from ..types import (
+    AIServiceDescriptionV2,
+    Conversation,
+    ConversationMessage,
+    PredefinedResponse,
+)
 from .modeling import (
     ConversationUserMessage,
     ScopeClass,
@@ -518,3 +524,62 @@ def build_prompt(
         prompt += f'{{"{selection[0]}":'
 
     return prompt
+
+
+CLASS_PREFIX = '{"scope_class": "'
+PREDEFINED_PREFIX = '{"scope_class": "Predefined Answer", "suggested_response": "'
+# A class token absent from the server's top-k gets this much less log-probability than
+# the least likely token that was returned: effectively zero, never exactly zero.
+MISSING_CLASS_LOGPROB_GAP = 5.0
+
+
+def class_first_tokens(tokenizer) -> dict[str, str]:
+    """The decoded first token of each class name as it follows CLASS_PREFIX.
+
+    Computed on the tokenizer itself so a vocabulary change cannot silently break the
+    readout; the prefix tokenisation must be preserved when a class name follows it.
+    """
+    prefix_ids = tokenizer.encode(CLASS_PREFIX, add_special_tokens=False)
+    tokens: dict[str, str] = {}
+    for scope_class in ScopeClass:
+        ids = tokenizer.encode(CLASS_PREFIX + scope_class.value + '"}', add_special_tokens=False)
+        if ids[: len(prefix_ids)] != prefix_ids or len(ids) == len(prefix_ids):
+            raise ValueError(
+                f"tokenizer does not preserve {CLASS_PREFIX!r} before {scope_class.value!r}"
+            )
+        tokens[scope_class.value] = tokenizer.decode([ids[len(prefix_ids)]])
+    if len(set(tokens.values())) != len(tokens):
+        raise ValueError(f"class first tokens are not distinct: {tokens}")
+    return tokens
+
+
+def class_probabilities(
+    top_logprobs: dict[str, float],
+    first_tokens: dict[str, str],
+    temperature: float = 1.0,
+) -> dict[str, float]:
+    """Softmax over the seven class first-token log-probabilities, divided by temperature."""
+    if temperature <= 0:
+        raise ValueError("temperature must be positive")
+    floor = min(top_logprobs.values(), default=0.0) - MISSING_CLASS_LOGPROB_GAP
+    logits = {c: top_logprobs.get(tok, floor) / temperature for c, tok in first_tokens.items()}
+    m = max(logits.values())
+    exp = {c: math.exp(v - m) for c, v in logits.items()}
+    z = sum(exp.values())
+    return {c: v / z for c, v in exp.items()}
+
+
+def predefined_candidates(
+    ai_service_description: str | AIServiceDescriptionV2,
+) -> list[str]:
+    """Response texts a structured description enumerates; [] otherwise."""
+    if not isinstance(ai_service_description, AIServiceDescriptionV2):
+        return []
+    entries = ai_service_description.predefined_responses
+    if not isinstance(entries, list):
+        return []
+    return [
+        e.response if isinstance(e, PredefinedResponse) else e
+        for e in entries
+        if isinstance(e, PredefinedResponse) or e.strip()
+    ]

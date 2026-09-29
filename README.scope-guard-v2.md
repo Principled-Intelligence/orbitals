@@ -258,6 +258,26 @@ On the CLI, `orbitals scope-guard-v2 serve --output-fields reasoning,scope_class
 
 Against a server started that way, a client that asks for nothing inherits the server's selection: the `api` backend leaves `skip_evidences` out of the request entirely, so `--output-fields` decides. Passing `output_fields` or `skip_evidences` on the call or the constructor overrides it, in either direction.
 
+### Fast classification with probabilities
+
+`classify` returns a probability for every scope class instead of generated text. The model's answer to a `scope_class`-only request is `{"scope_class": "<class>"}`, and the seven class names start with distinct tokens, so one forward pass over that position gives a seven-way distribution. On the eight public safety benchmarks the argmax matches guided decoding on 98% of rows with the same accuracy, at about a tenth of the latency, and every verdict carries a probability.
+
+```python
+sg = AsyncScopeGuardV2(backend="vllm-api", model="principled-intelligence/scope-guard-v2-4B-q-2609")
+
+result = await sg.classify(user_query, ai_service_description=ai_service_description)
+print(result.scope_class)               # ScopeClass.PREDEFINED_ANSWER
+print(result.probabilities)             # {"Predefined Answer": 0.93, "Directly Supported": 0.05, ...}
+print(result.confidence)                # 0.93
+if result.predefined_response:
+    print(result.predefined_response)      # the text to send back
+```
+
+- **Calibration.** As released the probabilities are over-confident. Divide the logits by a temperature fitted on a labelled sample from your traffic, set once per deployment: `decision_temperature` on the constructor or `--decision-temperature` on `orbitals scope-guard-v2 serve`; the value applied is reported as `temperature` on every result. On the public benchmarks the fitted value ranges from 1.2 to 2.8, about 1.7 overall; the class never depends on it. To try another value without redeploying, rescale the returned probabilities: `p_i' = softmax(log(p_i) / T)`, which is exact.
+- **Predefined answers come back as text.** When the class is `Predefined Answer` the response to send is in `predefined_response`. With an `AIServiceDescriptionV2` that lists `predefined_responses`, the matching entry is chosen by constrained decoding over the listed texts and returned verbatim, so the customer's own wording is kept; on the v2.3 test set this picks the right entry 94% of the time with two to five candidates (97% including single-entry lists). With a free-text description there is nothing to select from, so the reply is generated instead, as `validate` would. `resolve_predefined=False` skips this second step and returns the class alone.
+
+Available on the `vllm` and `vllm-api` backends and as `POST /orbitals/scope-guard-v2/classify` on the served API; the hosted `api` backend does not expose it yet.
+
 ### Default Safety Principles
 
 Like V1, ScopeGuard V2 can optionally add a built-in set of general safety restrictions to the AI service description before classification. When the description is an `AIServiceDescriptionV2`, they are appended to its `constraints`; service-specific rules are overridden on conflict.

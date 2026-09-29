@@ -50,6 +50,7 @@ def test_scope_guard_v2_package_all_is_exhaustive():
         "AsyncScopeGuardV2",
         "ScopeClass",
         "ScopeGuardV2",
+        "ScopeGuardV2Classification",
         "ScopeGuardV2Output",
         "augment_with_default_safety_principles_v2",
     }

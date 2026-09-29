@@ -93,6 +93,29 @@ class ScopeGuardV2Output(BaseModel):
     )
 
 
+class ScopeGuardV2Classification(BaseModel):
+    """A classification with a probability per class, read off the model's logits."""
+
+    scope_class: ScopeClass
+    probabilities: dict[str, float] = Field(
+        description="Probability of each scope class, keyed by class name; sums to 1."
+    )
+    confidence: float = Field(description="Probability of the chosen class.")
+    temperature: float = Field(
+        description="The guard's decision temperature the logits were divided by."
+    )
+    predefined_response: str | None = Field(
+        default=None,
+        description=(
+            "The predefined response to send when scope_class is Predefined Answer: the "
+            "matching entry of the description's list, verbatim, or a generated reply "
+            "when the description has no list. None for every other class."
+        ),
+    )
+    model: str
+    usage: LLMUsage | None = None
+
+
 class ConversationUserMessage(BaseModel):
     role: Literal["user"]
     content: str
