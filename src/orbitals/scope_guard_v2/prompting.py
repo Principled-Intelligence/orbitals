@@ -526,15 +526,6 @@ def build_prompt(
     return prompt
 
 
-# --- classification read off the logits ----------------------------------------------
-#
-# With `scope_class` as the only requested field the answer is `{"scope_class": "<class>"}`.
-# After CLASS_PREFIX the seven class names start with distinct first tokens, so the
-# next-token distribution at that position is a seven-way classifier. On the eight
-# external safety benchmarks this argmax agrees with guided decoding on 98% of rows at
-# the same accuracy; the probabilities are over-confident as released (fitted temperatures
-# 1.2 to 2.8 by benchmark, about 1.7 overall) and calibrate with one scalar.
-
 CLASS_PREFIX = '{"scope_class": "'
 PREDEFINED_PREFIX = '{"scope_class": "Predefined Answer", "suggested_response": "'
 # A class token absent from the server's top-k gets this much less log-probability than
@@ -570,7 +561,7 @@ def class_probabilities(
     """Softmax over the seven class first-token log-probabilities, divided by temperature."""
     if temperature <= 0:
         raise ValueError("temperature must be positive")
-    floor = min(top_logprobs.values()) - MISSING_CLASS_LOGPROB_GAP if top_logprobs else -30.0
+    floor = min(top_logprobs.values(), default=0.0) - MISSING_CLASS_LOGPROB_GAP
     logits = {c: top_logprobs.get(tok, floor) / temperature for c, tok in first_tokens.items()}
     m = max(logits.values())
     exp = {c: math.exp(v - m) for c, v in logits.items()}
@@ -578,20 +569,17 @@ def class_probabilities(
     return {c: v / z for c, v in exp.items()}
 
 
-
 def predefined_candidates(
     ai_service_description: str | AIServiceDescriptionV2,
-) -> list[tuple[str | None, str]]:
-    """(trigger, response) pairs a structured description enumerates; [] otherwise."""
+) -> list[str]:
+    """Response texts a structured description enumerates; [] otherwise."""
     if not isinstance(ai_service_description, AIServiceDescriptionV2):
         return []
     entries = ai_service_description.predefined_responses
     if not isinstance(entries, list):
         return []
-    out: list[tuple[str | None, str]] = []
-    for entry in entries:
-        if isinstance(entry, PredefinedResponse):
-            out.append((entry.trigger, entry.response))
-        elif isinstance(entry, str) and entry.strip():
-            out.append((None, entry))
-    return out
+    return [
+        e.response if isinstance(e, PredefinedResponse) else e
+        for e in entries
+        if isinstance(e, PredefinedResponse) or e.strip()
+    ]

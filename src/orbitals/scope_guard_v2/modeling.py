@@ -94,14 +94,7 @@ class ScopeGuardV2Output(BaseModel):
 
 
 class ScopeGuardV2Classification(BaseModel):
-    """A classification with a probability per class, read off the model's logits.
-
-    The seven-way distribution comes from one forward pass over the class position,
-    with no generated text, divided by the guard's `decision_temperature` (1.0 is the
-    model as released; fit it on labelled data). When the class is Predefined Answer the
-    response text is returned too: selected verbatim from the description's list of
-    predefined responses when there is one, generated otherwise.
-    """
+    """A classification with a probability per class, read off the model's logits."""
 
     scope_class: ScopeClass
     probabilities: dict[str, float] = Field(

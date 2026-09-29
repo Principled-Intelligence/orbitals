@@ -40,9 +40,8 @@ def _get_tokenizer(model_name: str) -> transformers.PreTrainedTokenizer:
     return transformers.AutoTokenizer.from_pretrained(model_name)
 
 
-@lru_cache(maxsize=8)
-def _class_tokens(tokenizer_name: str) -> dict[str, str]:
-    return class_first_tokens(_get_tokenizer(tokenizer_name))
+# vLLM's default max_logprobs.
+_DECISION_LOGPROBS = 20
 
 
 def _classification(
@@ -72,23 +71,15 @@ def _classification(
 
 
 def _grammar_choices(candidates: list[str]) -> list[str]:
-    """The texts the constrained-decoding grammar is built from.
-
-    vLLM's grammar backend cannot compile a `choice` over texts containing line breaks
-    (a multi-line address, for instance), so whitespace runs are collapsed to one space
-    for the grammar only. The entry returned to the caller is the original, by position.
-    """
+    # vLLM can't compile a `choice` grammar over texts with line breaks.
     return [" ".join(c.split()) for c in candidates]
 
 
 def _selected(text: str, candidates: list[str]) -> str:
     """Return the description's own entry the constrained completion corresponds to."""
     choices = _grammar_choices(candidates)
-    if text in choices:
-        return candidates[choices.index(text)]
-    stripped = text.strip()
-    if stripped in choices:
-        return candidates[choices.index(stripped)]
+    if text.strip() in choices:
+        return candidates[choices.index(text.strip())]
     raise ValueError(f"constrained decoding returned a non-candidate: {text!r}")
 
 
@@ -103,12 +94,10 @@ def _generated(text: str) -> str:
         value = json.loads(f'"{body}"')
     except json.JSONDecodeError:
         return body.strip()
-    return str(value).strip()
+    return value.strip()
 
 
-def _add_usage(a: LLMUsage | None, b: LLMUsage | None) -> LLMUsage | None:
-    if a is None or b is None:
-        return a or b
+def _add_usage(a: LLMUsage, b: LLMUsage) -> LLMUsage:
     return LLMUsage(
         prompt_tokens=a.prompt_tokens + b.prompt_tokens,
         completion_tokens=a.completion_tokens + b.completion_tokens,
@@ -147,7 +136,6 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         include_default_safety_principles: bool = False,
         count_system_prompt_in_usage: bool = False,
         decision_temperature: float = 1.0,
-        decision_logprobs: int = 20,
     ):
         from ...utils import maybe_configure_gpu_usage
 
@@ -176,7 +164,6 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         self.max_tokens = max_tokens
         self.count_system_prompt_in_usage = count_system_prompt_in_usage
         self.decision_temperature = decision_temperature
-        self.decision_logprobs = decision_logprobs
 
     def _offline_usage(self, output) -> LLMUsage:
         system_prompt_tokens = (
@@ -202,27 +189,28 @@ class VLLMScopeGuardV2(ScopeGuardV2):
     ) -> ScopeGuardV2Classification:
         import vllm
 
-        first_tokens = _class_tokens(self.model)
+        first_tokens = class_first_tokens(self.tokenizer)
         prompt = (
             build_prompt(
                 self.tokenizer, conversation, ai_service_description, output_fields=["scope_class"]
             )
             + CLASS_PREFIX
         )
-        params = vllm.SamplingParams(max_tokens=1, temperature=0.0, logprobs=self.decision_logprobs)
+        params = vllm.SamplingParams(max_tokens=1, temperature=0.0, logprobs=_DECISION_LOGPROBS)
         output = self.llm.generate([prompt], params, use_tqdm=False)[0]
         step = output.outputs[0].logprobs[0]
         top = {lp.decoded_token: lp.logprob for lp in step.values()}
+        usage = self._offline_usage(output)
         result = _classification(
             top,
             first_tokens,
             temperature=self.decision_temperature,
             model=self.model,
-            usage=self._offline_usage(output),
+            usage=usage,
         )
         if result.scope_class is not ScopeClass.PREDEFINED_ANSWER or not resolve_predefined:
             return result
-        candidates = [r for _, r in predefined_candidates(ai_service_description)]
+        candidates = predefined_candidates(ai_service_description)
         if len(candidates) == 1:
             result.predefined_response = candidates[0]
             return result
@@ -250,7 +238,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         output = self.llm.generate([prompt], params, use_tqdm=False)[0]
         text = output.outputs[0].text
         result.predefined_response = _selected(text, candidates) if candidates else _generated(text)
-        result.usage = _add_usage(result.usage, self._offline_usage(output))
+        result.usage = _add_usage(usage, self._offline_usage(output))
         return result
 
     def _validate(
@@ -302,26 +290,14 @@ class VLLMScopeGuardV2(ScopeGuardV2):
             ),
         )
         outputs = self.llm.generate(prompts, sampling_params, use_tqdm=False)
-
-        system_prompt_tokens = (
-            0
-            if self.count_system_prompt_in_usage
-            else len(self.tokenizer.encode(SYSTEM_PROMPT))
-        )
-
-        results = []
-        for output in outputs:
-            text = output.outputs[0].text
-            validated = response_model.model_validate(json.loads(text))
-            prompt_tokens = len(output.prompt_token_ids) - system_prompt_tokens
-            completion_tokens = len(output.outputs[0].token_ids)
-            usage = LLMUsage(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens + completion_tokens,
+        return [
+            _to_output(
+                response_model.model_validate(json.loads(output.outputs[0].text)),
+                self.model,
+                self._offline_usage(output),
             )
-            results.append(_to_output(validated, self.model, usage))
-        return results
+            for output in outputs
+        ]
 
 
 @AsyncScopeGuardV2.register_guard("vllm-api")
@@ -339,7 +315,6 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         count_system_prompt_in_usage: bool = False,
         include_default_safety_principles: bool = False,
         decision_temperature: float = 1.0,
-        decision_logprobs: int = 20,
     ):
         super().__init__(
             backend,
@@ -350,7 +325,6 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         if model is None:
             raise ValueError("A model name must be provided for AsyncScopeGuardV2.")
         self.decision_temperature = decision_temperature
-        self.decision_logprobs = decision_logprobs
         self.default_model_name = model
         self.default_tokenizer_name = (
             chat_templating_tokenizer
@@ -393,21 +367,16 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
             output_fields=selection,
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.vllm_serving_url}/v1/completions",
-                json={
-                    "model": model_name,
-                    "prompt": prompt,
-                    "temperature": self.vllm_temperature,
-                    "max_tokens": self.vllm_max_tokens,
-                    "structured_outputs": {"json": response_model.model_json_schema()},
-                },
-                headers={"Content-Type": "application/json"},
-            ) as response:
-                response.raise_for_status()
-                response_json = await response.json()
-                response_text = response_json["choices"][0]["text"]
+        response_json = await self._completion(
+            {
+                "model": model_name,
+                "prompt": prompt,
+                "temperature": self.vllm_temperature,
+                "max_tokens": self.vllm_max_tokens,
+                "structured_outputs": {"json": response_model.model_json_schema()},
+            }
+        )
+        response_text = response_json["choices"][0]["text"]
 
         if prefill:
             response_text = prompt[prompt.rindex('{"') :] + response_text
@@ -422,17 +391,7 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         except pydantic.ValidationError as e:
             raise ValueError(f"Failed to validate generated text: {e}")
 
-        system_prompt_tokens = (
-            0
-            if self.count_system_prompt_in_usage
-            else len(tokenizer.encode(SYSTEM_PROMPT))
-        )
-        usage = LLMUsage(
-            prompt_tokens=response_json["usage"]["prompt_tokens"] - system_prompt_tokens,
-            completion_tokens=response_json["usage"]["completion_tokens"],
-            total_tokens=response_json["usage"]["total_tokens"] - system_prompt_tokens,
-        )
-        return _to_output(validated, model_name, usage)
+        return _to_output(validated, model_name, self._api_usage(response_json, tokenizer))
 
     async def _completion(self, body: dict) -> dict:
         async with aiohttp.ClientSession() as session:
@@ -467,7 +426,7 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
     ) -> ScopeGuardV2Classification:
         tokenizer_name = chat_templating_tokenizer or model or self.default_tokenizer_name
         tokenizer = _get_tokenizer(tokenizer_name)
-        first_tokens = _class_tokens(tokenizer_name)
+        first_tokens = class_first_tokens(tokenizer)
         model_name = model if model is not None else self.default_model_name
 
         prompt = (
@@ -482,20 +441,21 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
                 "prompt": prompt,
                 "max_tokens": 1,
                 "temperature": 0.0,
-                "logprobs": self.decision_logprobs,
+                "logprobs": _DECISION_LOGPROBS,
             }
         )
         top = response_json["choices"][0]["logprobs"]["top_logprobs"][0]
+        usage = self._api_usage(response_json, tokenizer)
         result = _classification(
             top,
             first_tokens,
             temperature=self.decision_temperature,
             model=model_name,
-            usage=self._api_usage(response_json, tokenizer),
+            usage=usage,
         )
         if result.scope_class is not ScopeClass.PREDEFINED_ANSWER or not resolve_predefined:
             return result
-        candidates = [r for _, r in predefined_candidates(ai_service_description)]
+        candidates = predefined_candidates(ai_service_description)
         if len(candidates) == 1:
             result.predefined_response = candidates[0]
             return result
@@ -522,7 +482,7 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         response_json = await self._completion(body)
         text = response_json["choices"][0]["text"]
         result.predefined_response = _selected(text, candidates) if candidates else _generated(text)
-        result.usage = _add_usage(result.usage, self._api_usage(response_json, tokenizer))
+        result.usage = _add_usage(usage, self._api_usage(response_json, tokenizer))
         return result
 
     async def _validate(

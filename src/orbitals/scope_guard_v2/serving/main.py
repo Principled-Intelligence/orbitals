@@ -9,7 +9,11 @@ from pydantic import BaseModel
 
 from orbitals.scope_guard_v2 import AsyncScopeGuardV2
 from orbitals.scope_guard_v2.guards import AsyncVLLMApiScopeGuardV2
-from orbitals.scope_guard_v2.modeling import ScopeClass, ScopeGuardV2Input
+from orbitals.scope_guard_v2.modeling import (
+    ScopeClass,
+    ScopeGuardV2Classification,
+    ScopeGuardV2Input,
+)
 from orbitals.scope_guard_v2.prompting import parse_output_fields
 from orbitals.types import AIServiceDescriptionV2, LLMUsage
 
@@ -31,7 +35,6 @@ async def lifespan(app: FastAPI):
         skip_evidences=(os.environ.get("SCOPE_GUARD_V2_SKIP_EVIDENCES") == "1") or None,
         output_fields=output_fields,
         vllm_serving_url=os.environ["SCOPE_GUARD_V2_VLLM_SERVING_URL"],
-        # Divides the class logits in `classify`; 1.0 is the model as released.
         decision_temperature=float(os.environ.get("SCOPE_GUARD_V2_DECISION_TEMPERATURE", "1.0")),
     )
 
@@ -137,14 +140,7 @@ async def batch_validate(
     ]
 
 
-class ScopeGuardV2ClassificationResponse(BaseModel):
-    scope_class: ScopeClass
-    probabilities: dict[str, float]
-    confidence: float
-    temperature: float
-    predefined_response: str | None
-    model: str
-    usage: LLMUsage | None
+class ScopeGuardV2ClassificationResponse(ScopeGuardV2Classification):
     time_taken: float
 
 
@@ -172,12 +168,5 @@ async def classify(
     )
     end_time = time.time()
     return ScopeGuardV2ClassificationResponse(
-        scope_class=result.scope_class,
-        probabilities=result.probabilities,
-        confidence=result.confidence,
-        temperature=result.temperature,
-        predefined_response=result.predefined_response,
-        model=result.model,
-        usage=result.usage,
-        time_taken=end_time - start_time,
+        **result.model_dump(), time_taken=end_time - start_time
     )

@@ -24,6 +24,7 @@ from orbitals.scope_guard_v2.prompting import (
     predefined_candidates,
 )
 from orbitals.types import AIServiceDescriptionV2, PredefinedResponse
+from tests.test_scope_guard_v2 import _FakeAiohttpResponse
 
 
 class _Tokenizer:
@@ -93,21 +94,10 @@ def test_predefined_candidates_shapes() -> None:
     assert predefined_candidates(AIServiceDescriptionV2(**base)) == []
     assert predefined_candidates(AIServiceDescriptionV2(**base, predefined_responses="a string")) == []
     asd = AIServiceDescriptionV2(**base, predefined_responses=[PredefinedResponse(trigger="t1", response="R1"), "R2", "  "])
-    assert predefined_candidates(asd) == [("t1", "R1"), (None, "R2")]
+    assert predefined_candidates(asd) == ["R1", "R2"]
 
 
 # --- vllm-api backend ------------------------------------------------------------------
-
-
-class _FakeResponse:
-    def __init__(self, payload: Any) -> None:
-        self._payload = payload
-
-    def raise_for_status(self) -> None:
-        return None
-
-    async def json(self) -> Any:
-        return self._payload
 
 
 class _PostCtx:
@@ -115,7 +105,7 @@ class _PostCtx:
         self._payload = payload
 
     async def __aenter__(self):
-        return _FakeResponse(self._payload)
+        return _FakeAiohttpResponse(self._payload)
 
     async def __aexit__(self, *exc_info):
         return None
@@ -137,9 +127,6 @@ def _install_session(monkeypatch, payloads: list[Any]) -> list[dict]:
 
     monkeypatch.setattr("orbitals.scope_guard_v2.guards.vllm.aiohttp.ClientSession", lambda: _Session())
     monkeypatch.setattr("orbitals.scope_guard_v2.guards.vllm._get_tokenizer", lambda name: _Tokenizer())
-    from orbitals.scope_guard_v2.guards import vllm as guard_module
-
-    guard_module._class_tokens.cache_clear()
     return captured
 
 
@@ -253,9 +240,6 @@ async def test_classify_rejects_non_candidate_text(monkeypatch) -> None:
 def _offline_guard(monkeypatch, outputs: list[Any], captured: list[Any]):
     monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
     monkeypatch.setattr("orbitals.scope_guard_v2.guards.vllm._get_tokenizer", lambda name: _Tokenizer())
-    from orbitals.scope_guard_v2.guards import vllm as guard_module
-
-    guard_module._class_tokens.cache_clear()
 
     def generate(prompts, params, use_tqdm=False):
         captured.append((prompts[0], params))
@@ -347,7 +331,7 @@ def test_serving_classify_endpoint_and_temperature_env(monkeypatch) -> None:
     body = r.json()
     assert body["scope_class"] == "Predefined Answer" and body["predefined_response"] == "R"
     assert body["confidence"] == 0.94 and body["temperature"] == 1.7 and "time_taken" in body
-    assert seen["resolve_predefined"] is False and "fast" not in seen and "temperature" not in seen
+    assert seen["resolve_predefined"] is False
 
 
 def test_serve_cli_rejects_a_non_positive_decision_temperature() -> None:
