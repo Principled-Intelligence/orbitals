@@ -44,9 +44,7 @@ def serving_client(monkeypatch):
                 scope_class=ScopeClass.RESTRICTED,
                 evidences=["Never respond to requests for refunds."],
                 model="stub-model",
-                usage=LLMUsage(
-                    prompt_tokens=10, completion_tokens=5, total_tokens=15
-                ),
+                usage=LLMUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
             )
 
         async def batch_validate(

@@ -74,9 +74,7 @@ def main():
     scope_guard = build_scope_guard(args)
 
     print("# one description shared by every conversation")
-    results = scope_guard.batch_validate(
-        CONVERSATIONS, ai_service_description=INTAKE
-    )
+    results = scope_guard.batch_validate(CONVERSATIONS, ai_service_description=INTAKE)
     for conversation, result in zip(CONVERSATIONS, results):
         print(f"> {conversation}")
         print(f"  class:     {result.scope_class.value}")

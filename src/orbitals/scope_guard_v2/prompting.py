@@ -542,7 +542,9 @@ def class_first_tokens(tokenizer) -> dict[str, str]:
     prefix_ids = tokenizer.encode(CLASS_PREFIX, add_special_tokens=False)
     tokens: dict[str, str] = {}
     for scope_class in ScopeClass:
-        ids = tokenizer.encode(CLASS_PREFIX + scope_class.value + '"}', add_special_tokens=False)
+        ids = tokenizer.encode(
+            CLASS_PREFIX + scope_class.value + '"}', add_special_tokens=False
+        )
         if ids[: len(prefix_ids)] != prefix_ids or len(ids) == len(prefix_ids):
             raise ValueError(
                 f"tokenizer does not preserve {CLASS_PREFIX!r} before {scope_class.value!r}"
@@ -562,7 +564,9 @@ def class_probabilities(
     if temperature <= 0:
         raise ValueError("temperature must be positive")
     floor = min(top_logprobs.values(), default=0.0) - MISSING_CLASS_LOGPROB_GAP
-    logits = {c: top_logprobs.get(tok, floor) / temperature for c, tok in first_tokens.items()}
+    logits = {
+        c: top_logprobs.get(tok, floor) / temperature for c, tok in first_tokens.items()
+    }
     m = max(logits.values())
     exp = {c: math.exp(v - m) for c, v in logits.items()}
     z = sum(exp.values())

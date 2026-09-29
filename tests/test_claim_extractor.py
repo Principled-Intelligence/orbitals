@@ -115,8 +115,7 @@ def test_parse_intents_only_handles_hf_style_output_stop_included():
     # HF's stop_strings includes the stop string in the decoded text.
     text = (
         '{"extractions": {"intents": '
-        '[{"content": "The user wants package tracking."}], '
-        + CLAIMS_STOP_STRING
+        '[{"content": "The user wants package tracking."}], ' + CLAIMS_STOP_STRING
     )
 
     extractions = parse_intents_only_output(text)
@@ -257,7 +256,9 @@ def test_claim_extractor_pipeline_allows_per_call_skip_evidences_override(monkey
     assert preprocess_kwargs == {"skip_evidences": False}
 
 
-def test_claim_extractor_pipeline_forwards_intents_only_constructor_default(monkeypatch):
+def test_claim_extractor_pipeline_forwards_intents_only_constructor_default(
+    monkeypatch,
+):
     _install_fake_pipeline_modules(monkeypatch)
     module = importlib.reload(importlib.import_module("hf_pipeline.claim_extractor"))
     pipeline = module.ClaimExtractionPipeline(

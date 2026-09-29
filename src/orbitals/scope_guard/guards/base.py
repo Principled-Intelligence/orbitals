@@ -112,8 +112,7 @@ class BaseScopeGuard:
         if not include or ai_service_descriptions is None:
             return ai_service_descriptions
         return [
-            augment_with_default_safety_principles(ad)
-            for ad in ai_service_descriptions
+            augment_with_default_safety_principles(ad) for ad in ai_service_descriptions
         ]  # type: ignore[return-value]
 
     def _validate_conversation(

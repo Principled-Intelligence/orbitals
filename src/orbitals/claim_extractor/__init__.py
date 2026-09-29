@@ -2,8 +2,8 @@ from .extractors import AsyncClaimExtractor, ClaimExtractor
 from .modeling import (
     Claim,
     ClaimExtractorOutput,
-    ExtractionSubType,
     Extractions,
+    ExtractionSubType,
     Intent,
 )
 

@@ -71,9 +71,7 @@ async def main():
     # One at a time, for comparison.
     started = time.time()
     for query in QUERIES:
-        await scope_guard.validate(
-            query, ai_service_description=AI_SERVICE_DESCRIPTION
-        )
+        await scope_guard.validate(query, ai_service_description=AI_SERVICE_DESCRIPTION)
     sequential = time.time() - started
 
     # All at once.

@@ -35,7 +35,9 @@ async def lifespan(app: FastAPI):
         skip_evidences=(os.environ.get("SCOPE_GUARD_V2_SKIP_EVIDENCES") == "1") or None,
         output_fields=output_fields,
         vllm_serving_url=os.environ["SCOPE_GUARD_V2_VLLM_SERVING_URL"],
-        decision_temperature=float(os.environ.get("SCOPE_GUARD_V2_DECISION_TEMPERATURE", "1.0")),
+        decision_temperature=float(
+            os.environ.get("SCOPE_GUARD_V2_DECISION_TEMPERATURE", "1.0")
+        ),
     )
 
     yield
@@ -145,7 +147,8 @@ class ScopeGuardV2ClassificationResponse(ScopeGuardV2Classification):
 
 
 @app.post(
-    "/orbitals/scope-guard-v2/classify", response_model=ScopeGuardV2ClassificationResponse
+    "/orbitals/scope-guard-v2/classify",
+    response_model=ScopeGuardV2ClassificationResponse,
 )
 async def classify(
     conversation: ScopeGuardV2Input,

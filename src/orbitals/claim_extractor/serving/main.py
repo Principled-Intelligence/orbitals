@@ -91,9 +91,7 @@ async def health() -> dict[str, str]:
 @app.post("/orbitals/claim-extractor/extract", response_model=ClaimExtractorResponse)
 async def extract(
     conversation: ClaimExtractorInput,
-    ai_service_description: Annotated[
-        str | AIServiceDescription | None, Body()
-    ] = None,
+    ai_service_description: Annotated[str | AIServiceDescription | None, Body()] = None,
     skip_evidences: Annotated[bool | None, Body()] = None,
     intents_only: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,
@@ -186,9 +184,7 @@ async def batch_extract(
 )
 async def extract_conversation(
     conversation: ClaimExtractorInput,
-    ai_service_description: Annotated[
-        str | AIServiceDescription | None, Body()
-    ] = None,
+    ai_service_description: Annotated[str | AIServiceDescription | None, Body()] = None,
     skip_evidences: Annotated[bool | None, Body()] = None,
     intents_only: Annotated[bool | None, Body()] = None,
     model: Annotated[str | None, Body()] = None,

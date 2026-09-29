@@ -53,7 +53,9 @@ class ScopeGuardV2Pipeline(Pipeline):
         per_call = resolve_selection(
             kwargs.get("output_fields"), kwargs.get("skip_evidences")
         )
-        selection = per_call if per_call is not None else (self.output_fields or ALL_FIELDS)
+        selection = (
+            per_call if per_call is not None else (self.output_fields or ALL_FIELDS)
+        )
         return ({"output_fields": selection}, {}, {})
 
     def preprocess(

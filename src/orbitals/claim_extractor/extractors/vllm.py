@@ -49,6 +49,8 @@ def _strip_lone_surrogates(obj):
 
 
 _DEFAULT_SPECULATIVE_CONFIG = {"num_speculative_tokens": 4, "method": "mtp"}
+
+
 # Sentinel for `speculative_config`: distinguishes "user did not specify, apply
 # our default" from "user explicitly passed None to disable speculative decoding".
 class _UseDefaultSpeculativeConfig:

@@ -1,3 +1,10 @@
+import json
+
+from pydantic import BaseModel, Field
+
+from ..types import AIServiceDescription, Conversation, ConversationMessage
+from .modeling import Claim, ClaimExtractorInput, Extractions, ExtractionSubType, Intent
+
 SYSTEM_PROMPT_ICE_EXTRACTION_GUIDED = """You are an expert claims and intent extractor. Extract all verifiable factual claims and user intents from the last message (marked as `LAST MESSAGE (USER)` or `LAST MESSAGE (ASSISTANT)`).
 
 For every extraction, **decontextualize**: rewrite it so it can be understood without the original text, using only context that appears within the conversation or the AI Service Description (when provided).
@@ -387,13 +394,6 @@ When a fact is expressed with a negation ("I don't have a receipt"):
 - Preserve the negation explicitly in the Claim content ("The user does not have a receipt"). Never convert a negation into an affirmative claim, and never drop it as "no fact to extract"."""
 
 
-import json
-
-from pydantic import BaseModel, Field
-
-from ..types import AIServiceDescription, Conversation, ConversationMessage
-from .modeling import Claim, ClaimExtractorInput, Extractions, ExtractionSubType, Intent
-
 LAST_MESSAGE_TAG = "LAST MESSAGE"
 
 # Stop string used by the generation backends when `intents_only` is enabled.
@@ -574,10 +574,7 @@ def convert_to_conversation(messages: str | list[dict[str, str]]) -> Conversatio
         messages = json.loads(messages)
 
     conversation = Conversation(
-        messages=[
-            ConversationMessage.model_validate(message)
-            for message in messages
-        ]
+        messages=[ConversationMessage.model_validate(message) for message in messages]
     )
     return conversation
 
@@ -616,10 +613,7 @@ def _normalize_conversation(
 
 
 def prepare_messages(
-    conversation: ClaimExtractorInput
-    | Conversation
-    | list[dict[str, str]]
-    | str,
+    conversation: ClaimExtractorInput | Conversation | list[dict[str, str]] | str,
     ai_service_description: str | AIServiceDescription | None,
     skip_evidences: bool = True,
 ) -> list[dict[str, str]]:
@@ -651,10 +645,7 @@ def prepare_messages(
 
 def build_prompt(
     tokenizer,
-    conversation: ClaimExtractorInput
-    | Conversation
-    | list[dict[str, str]]
-    | str,
+    conversation: ClaimExtractorInput | Conversation | list[dict[str, str]] | str,
     ai_service_description: str | AIServiceDescription | None,
     skip_evidences: bool = True,
     prefill: bool = False,

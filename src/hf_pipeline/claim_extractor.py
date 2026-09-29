@@ -65,9 +65,7 @@ class ClaimExtractionPipeline(Pipeline):
         preprocess_kwargs = {
             "skip_evidences": kwargs.get("skip_evidences", self.skip_evidences)
         }
-        forward_kwargs = {
-            "intents_only": kwargs.get("intents_only", self.intents_only)
-        }
+        forward_kwargs = {"intents_only": kwargs.get("intents_only", self.intents_only)}
 
         return (
             preprocess_kwargs,

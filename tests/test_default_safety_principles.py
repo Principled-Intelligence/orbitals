@@ -230,9 +230,7 @@ def test_structured_input_preserves_existing_string_principle(mocked_post):
         api_url="http://example.com",
         include_default_safety_principles=True,
     )
-    desc = AIServiceDescription(
-        identity_role="r", context="c", principles="be polite"
-    )
+    desc = AIServiceDescription(identity_role="r", context="c", principles="be polite")
     sg.validate("hi", ai_service_description=desc)
 
     principles = _body(mocked_post)["ai_service_description"]["principles"]
@@ -269,9 +267,7 @@ def test_json_string_input_parsed_and_principle_inserted(mocked_post):
         api_url="http://example.com",
         include_default_safety_principles=True,
     )
-    desc_json = AIServiceDescription(
-        identity_role="r", context="c"
-    ).model_dump_json()
+    desc_json = AIServiceDescription(identity_role="r", context="c").model_dump_json()
     sg.validate("hi", ai_service_description=desc_json)
 
     body_desc = _body(mocked_post)["ai_service_description"]

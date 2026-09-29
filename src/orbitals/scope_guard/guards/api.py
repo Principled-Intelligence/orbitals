@@ -101,9 +101,7 @@ class APIScopeGuard(ScopeGuard):
             backend,
             include_default_safety_principles=include_default_safety_principles,
         )
-        self.default_model = (
-            self.maybe_map_model(model) if model is not None else None
-        )
+        self.default_model = self.maybe_map_model(model) if model is not None else None
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
         self.skip_evidences = skip_evidences
@@ -195,9 +193,7 @@ class AsyncAPIScopeGuard(AsyncScopeGuard):
             backend,
             include_default_safety_principles=include_default_safety_principles,
         )
-        self.default_model = (
-            self.maybe_map_model(model) if model is not None else None
-        )
+        self.default_model = self.maybe_map_model(model) if model is not None else None
         self.api_url = api_url
         self.api_key = _maybe_get_api_key(api_key, custom_headers)
         self.skip_evidences = skip_evidences
