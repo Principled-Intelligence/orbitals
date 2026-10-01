@@ -1009,6 +1009,44 @@ def test_vllm_backend_warns_about_prompt_drift_at_construction(
     assert any(repo in r.getMessage() for r in caplog.records)
 
 
+def test_vllm_backend_passes_vllm_kwargs_to_the_engine(monkeypatch):
+    import sys
+    import types
+
+    from orbitals.scope_guard_v2 import ScopeGuardV2
+
+    engines: list[dict[str, Any]] = []
+    monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.vllm.check_shipped_system_prompt",
+        lambda model: None,
+    )
+    monkeypatch.setattr(
+        "orbitals.scope_guard_v2.guards.vllm._get_tokenizer", lambda name: object()
+    )
+    monkeypatch.setitem(
+        sys.modules, "vllm", types.SimpleNamespace(LLM=lambda **kw: engines.append(kw))
+    )
+
+    ScopeGuardV2(
+        backend="vllm",
+        model="m",
+        max_num_seqs=64,
+        vllm_kwargs={"enable_prefix_caching": True, "max_num_batched_tokens": 32768},
+    )
+
+    assert engines == [
+        {
+            "model": "m",
+            "max_model_len": 30_000,
+            "max_num_seqs": 64,
+            "gpu_memory_utilization": 0.9,
+            "enable_prefix_caching": True,
+            "max_num_batched_tokens": 32768,
+        }
+    ]
+
+
 def test_vllm_api_backend_warns_about_the_model_not_the_tokenizer(
     tmp_path, caplog, monkeypatch
 ):

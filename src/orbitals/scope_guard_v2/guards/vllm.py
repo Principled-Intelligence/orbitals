@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from functools import lru_cache
-from typing import TYPE_CHECKING, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 import aiohttp
 import pydantic
@@ -134,7 +134,14 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         include_default_safety_principles: bool = False,
         count_system_prompt_in_usage: bool = False,
         decision_temperature: float = 1.0,
+        vllm_kwargs: dict[str, Any] | None = None,
     ):
+        """Load the model into an in-process vLLM engine.
+
+        Args:
+            vllm_kwargs: Further `vllm.LLM` engine arguments, such as
+                `enable_prefix_caching` or `max_num_batched_tokens`.
+        """
         from ...utils import maybe_configure_gpu_usage
 
         maybe_configure_gpu_usage()
@@ -156,6 +163,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
             max_model_len=max_model_len,
             max_num_seqs=max_num_seqs,
             gpu_memory_utilization=gpu_memory_utilization,
+            **(vllm_kwargs or {}),
         )
         self.tokenizer = _get_tokenizer(self.model)
         self.temperature = temperature
@@ -185,71 +193,101 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         resolve_predefined: bool = True,
         **kwargs,
     ) -> ScopeGuardV2Classification:
+        return self._batch_classify(
+            [conversation],
+            ai_service_description=ai_service_description,
+            resolve_predefined=resolve_predefined,
+        )[0]
+
+    def _batch_classify(
+        self,
+        conversations: list[ScopeGuardV2Input],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2 | None = None,
+        ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
+        resolve_predefined: bool = True,
+        **kwargs,
+    ) -> list[ScopeGuardV2Classification]:
         import vllm
 
+        if ai_service_descriptions is not None:
+            pairs = list(zip(conversations, ai_service_descriptions))
+        elif ai_service_description is not None:
+            pairs = [(c, ai_service_description) for c in conversations]
+        else:
+            raise ValueError("an AI service description is required")
+
         first_tokens = class_first_tokens(self.tokenizer)
-        prompt = (
-            build_prompt(
-                self.tokenizer,
-                conversation,
-                ai_service_description,
-                output_fields=["scope_class"],
-            )
+        prompts = [
+            build_prompt(self.tokenizer, c, ad, output_fields=["scope_class"])
             + CLASS_PREFIX
-        )
+            for c, ad in pairs
+        ]
         params = vllm.SamplingParams(
             max_tokens=1, temperature=0.0, logprobs=_DECISION_LOGPROBS
         )
-        output = self.llm.generate([prompt], params, use_tqdm=False)[0]
-        step = output.outputs[0].logprobs[0]
-        top = {lp.decoded_token: lp.logprob for lp in step.values()}
-        usage = self._offline_usage(output)
-        result = _classification(
-            top,
-            first_tokens,
-            temperature=self.decision_temperature,
-            model=self.model,
-            usage=usage,
-        )
-        if (
-            result.scope_class is not ScopeClass.PREDEFINED_ANSWER
-            or not resolve_predefined
-        ):
-            return result
-        candidates = predefined_candidates(ai_service_description)
-        if len(candidates) == 1:
-            result.predefined_response = candidates[0]
-            return result
-        prompt = (
+        results = [
+            _classification(
+                {
+                    lp.decoded_token: lp.logprob
+                    for lp in output.outputs[0].logprobs[0].values()
+                },
+                first_tokens,
+                temperature=self.decision_temperature,
+                model=self.model,
+                usage=self._offline_usage(output),
+            )
+            for output in self.llm.generate(prompts, params, use_tqdm=False)
+        ]
+        if not resolve_predefined:
+            return results
+
+        pending = []
+        for result, (c, ad) in zip(results, pairs):
+            if result.scope_class is not ScopeClass.PREDEFINED_ANSWER:
+                continue
+            candidates = predefined_candidates(ad)
+            if len(candidates) == 1:
+                result.predefined_response = candidates[0]
+            else:
+                pending.append((result, c, ad, candidates))
+        if not pending:
+            return results
+
+        prompts = [
             build_prompt(
                 self.tokenizer,
-                conversation,
-                ai_service_description,
+                c,
+                ad,
                 output_fields=["scope_class", "suggested_response"],
             )
             + PREDEFINED_PREFIX
-        )
-        if candidates:
-            params = vllm.SamplingParams(
+            for _, c, ad, _ in pending
+        ]
+        params = [
+            vllm.SamplingParams(
                 max_tokens=self.max_tokens,
                 temperature=0.0,
                 structured_outputs=vllm.sampling_params.StructuredOutputsParams(
                     choice=_grammar_choices(candidates)
                 ),
             )
-        else:
-            params = vllm.SamplingParams(
+            if candidates
+            else vllm.SamplingParams(
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
                 stop=[_RESPONSE_STOP],
             )
-        output = self.llm.generate([prompt], params, use_tqdm=False)[0]
-        text = output.outputs[0].text
-        result.predefined_response = (
-            _selected(text, candidates) if candidates else _generated(text)
-        )
-        result.usage = _add_usage(usage, self._offline_usage(output))
-        return result
+            for _, _, _, candidates in pending
+        ]
+        outputs = self.llm.generate(prompts, params, use_tqdm=False)
+        for (result, _, _, candidates), output in zip(pending, outputs):
+            text = output.outputs[0].text
+            result.predefined_response = (
+                _selected(text, candidates) if candidates else _generated(text)
+            )
+            result.usage = _add_usage(result.usage, self._offline_usage(output))  # type: ignore[invalid-argument-type]
+        return results
 
     def _validate(
         self,
@@ -438,6 +476,51 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         model: str | None = None,
         chat_templating_tokenizer: str | None = None,
         **kwargs,
+    ) -> ScopeGuardV2Classification:
+        results = await self._batch_classify(
+            [conversation],
+            ai_service_description=ai_service_description,
+            resolve_predefined=resolve_predefined,
+            model=model,
+            chat_templating_tokenizer=chat_templating_tokenizer,
+        )
+        return results[0]
+
+    async def _batch_classify(
+        self,
+        conversations: list[ScopeGuardV2Input],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2 | None = None,
+        ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
+        resolve_predefined: bool = True,
+        model: str | None = None,
+        chat_templating_tokenizer: str | None = None,
+        **kwargs,
+    ) -> list[ScopeGuardV2Classification]:
+        if ai_service_description is not None:
+            ai_service_descriptions = [ai_service_description] * len(conversations)  # type: ignore[invalid-assignment]
+
+        return await asyncio.gather(
+            *(
+                self._handle_classify_request(
+                    c,
+                    ai_service_description=aisd,
+                    resolve_predefined=resolve_predefined,
+                    model=model,
+                    chat_templating_tokenizer=chat_templating_tokenizer,
+                )
+                for c, aisd in zip(conversations, ai_service_descriptions)  # type: ignore[invalid-argument-type]
+            )
+        )
+
+    async def _handle_classify_request(
+        self,
+        conversation: ScopeGuardV2Input,
+        *,
+        ai_service_description: str | AIServiceDescriptionV2,
+        resolve_predefined: bool,
+        model: str | None,
+        chat_templating_tokenizer: str | None,
     ) -> ScopeGuardV2Classification:
         tokenizer_name = (
             chat_templating_tokenizer or model or self.default_tokenizer_name

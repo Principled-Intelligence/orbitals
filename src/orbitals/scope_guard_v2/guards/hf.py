@@ -7,9 +7,32 @@ if TYPE_CHECKING:
     from transformers import pipeline  # noqa: F401
 
 from ...types import AIServiceDescriptionV2, LLMUsage
-from ..modeling import ScopeGuardV2Input, ScopeGuardV2Output
-from ..prompting import SYSTEM_PROMPT, check_shipped_system_prompt, response_model_for
+from ..modeling import (
+    ScopeClass,
+    ScopeGuardV2Classification,
+    ScopeGuardV2Input,
+    ScopeGuardV2Output,
+)
+from ..prompting import (
+    CLASS_PREFIX,
+    PREDEFINED_PREFIX,
+    SYSTEM_PROMPT,
+    build_prompt,
+    check_shipped_system_prompt,
+    class_first_tokens,
+    predefined_candidates,
+    response_model_for,
+)
 from .base import ScopeGuardV2
+from .vllm import (
+    _DECISION_LOGPROBS,
+    _RESPONSE_STOP,
+    _add_usage,
+    _classification,
+    _generated,
+    _grammar_choices,
+    _selected,
+)
 
 
 def _parse(
@@ -47,6 +70,7 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
         do_sample: bool = False,
         include_default_safety_principles: bool = False,
         count_system_prompt_in_usage: bool = False,
+        decision_temperature: float = 1.0,
         **kwargs,
     ):
         from ...utils import maybe_configure_gpu_usage
@@ -76,6 +100,9 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
         )  # type: ignore # ty: ignore[no-matching-overload]
         self.count_system_prompt_in_usage = count_system_prompt_in_usage
         self._cached_system_prompt_tokens: int | None = None
+        self.max_new_tokens = max_new_tokens
+        self.do_sample = do_sample
+        self.decision_temperature = decision_temperature
 
     @property
     def _system_prompt_tokens(self) -> int:
@@ -109,6 +136,131 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
         )
+
+    def _classify(
+        self,
+        conversation: ScopeGuardV2Input,
+        *,
+        ai_service_description: str | AIServiceDescriptionV2,
+        resolve_predefined: bool = True,
+        **kwargs,
+    ) -> ScopeGuardV2Classification:
+        import torch
+
+        tokenizer = self._pipeline.tokenizer
+        model = self._pipeline.model
+        prompt = (
+            build_prompt(
+                tokenizer,
+                conversation,
+                ai_service_description,
+                output_fields=["scope_class"],
+            )
+            + CLASS_PREFIX
+        )
+        inputs = tokenizer(prompt, return_tensors="pt").to(self._pipeline.device)
+        with torch.inference_mode():
+            logprobs = model(**inputs).logits[0, -1].float().log_softmax(-1)
+        # The same top-k vLLM returns, so both backends floor missing classes alike.
+        top = logprobs.topk(_DECISION_LOGPROBS)
+        result = _classification(
+            {
+                tokenizer.decode([i]): lp
+                for lp, i in zip(top.values.tolist(), top.indices.tolist())
+            },
+            class_first_tokens(tokenizer),
+            temperature=self.decision_temperature,
+            model=self.model,
+            usage=self._usage(
+                {"prompt_tokens": inputs.input_ids.shape[1], "completion_tokens": 1}
+            ),
+        )
+        if (
+            result.scope_class is not ScopeClass.PREDEFINED_ANSWER
+            or not resolve_predefined
+        ):
+            return result
+        candidates = predefined_candidates(ai_service_description)
+        if len(candidates) == 1:
+            result.predefined_response = candidates[0]
+            return result
+
+        prompt = (
+            build_prompt(
+                tokenizer,
+                conversation,
+                ai_service_description,
+                output_fields=["scope_class", "suggested_response"],
+            )
+            + PREDEFINED_PREFIX
+        )
+        inputs = tokenizer(prompt, return_tensors="pt").to(self._pipeline.device)
+        start = inputs.input_ids.shape[1]
+        generate_kwargs: dict = {
+            "max_new_tokens": self.max_new_tokens,
+            "eos_token_id": tokenizer.eos_token_id,
+            "pad_token_id": tokenizer.pad_token_id,
+        }
+        if candidates:
+            choices = [
+                tokenizer.encode(c, add_special_tokens=False)
+                for c in _grammar_choices(candidates)
+            ]
+
+            # Greedy decoding over the listed texts' tokens, as vLLM's `choice` does.
+            def allowed(batch_id: int, ids) -> list[int]:
+                done = ids[start:].tolist()
+                n = len(done)
+                nxt = {c[n] for c in choices if len(c) > n and c[:n] == done}
+                if done in choices:
+                    nxt.add(tokenizer.eos_token_id)
+                return list(nxt)
+
+            generate_kwargs |= {
+                "do_sample": False,
+                "prefix_allowed_tokens_fn": allowed,
+            }
+        else:
+            generate_kwargs |= {
+                "do_sample": self.do_sample,
+                "stop_strings": [_RESPONSE_STOP],
+                "tokenizer": tokenizer,
+            }
+        with torch.inference_mode():
+            generated = model.generate(**inputs, **generate_kwargs)[0, start:]
+        text = tokenizer.decode(generated, skip_special_tokens=True)
+        result.predefined_response = (
+            _selected(text, candidates) if candidates else _generated(text)
+        )
+        second = self._usage(
+            {"prompt_tokens": start, "completion_tokens": generated.shape[0]}
+        )
+        if result.usage is not None and second is not None:
+            result.usage = _add_usage(result.usage, second)
+        return result
+
+    def _batch_classify(
+        self,
+        conversations: list[ScopeGuardV2Input],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2 | None = None,
+        ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
+        resolve_predefined: bool = True,
+        **kwargs,
+    ) -> list[ScopeGuardV2Classification]:
+        if ai_service_descriptions is not None:
+            pairs = list(zip(conversations, ai_service_descriptions))
+        elif ai_service_description is not None:
+            pairs = [(c, ai_service_description) for c in conversations]
+        else:
+            raise ValueError("an AI service description is required")
+
+        return [
+            self._classify(
+                c, ai_service_description=ad, resolve_predefined=resolve_predefined
+            )
+            for c, ad in pairs
+        ]
 
     def _validate(
         self,

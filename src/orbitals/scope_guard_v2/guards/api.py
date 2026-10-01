@@ -7,6 +7,7 @@ import requests
 
 from ...types import AIServiceDescriptionV2
 from ..modeling import (
+    ScopeGuardV2Classification,
     ScopeGuardV2Input,
     ScopeGuardV2InputTypeAdapter,
     ScopeGuardV2Output,
@@ -109,6 +110,33 @@ def _build_batch_request_data(
             else {}
         ),
         **_selection_fields(output_fields, skip_evidences),
+    }
+
+
+def _build_classify_request_data(
+    model: str | None,
+    conversation: ScopeGuardV2Input,
+    ai_service_description: str | AIServiceDescriptionV2,
+    resolve_predefined: bool,
+) -> dict:
+    return {
+        **_build_request_data(model, conversation, None, ai_service_description),
+        "resolve_predefined": resolve_predefined,
+    }
+
+
+def _build_batch_classify_request_data(
+    model: str | None,
+    conversations: list[ScopeGuardV2Input],
+    ai_service_description: str | AIServiceDescriptionV2 | None,
+    ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None,
+    resolve_predefined: bool,
+) -> dict:
+    return {
+        **_build_batch_request_data(
+            model, conversations, None, ai_service_description, ai_service_descriptions
+        ),
+        "resolve_predefined": resolve_predefined,
     }
 
 
@@ -221,6 +249,55 @@ class APIScopeGuardV2(ScopeGuardV2):
         response.raise_for_status()
         return [_parse_output(result) for result in response.json()]
 
+    def _classify(
+        self,
+        conversation: ScopeGuardV2Input,
+        *,
+        ai_service_description: str | AIServiceDescriptionV2,
+        resolve_predefined: bool = True,
+        model: str | None = None,
+        **kwargs,
+    ) -> ScopeGuardV2Classification:
+        response = requests.post(
+            f"{self.api_url}/orbitals/scope-guard-v2/classify",
+            json=_build_classify_request_data(
+                model=model if model is not None else self.default_model,
+                conversation=conversation,
+                ai_service_description=ai_service_description,
+                resolve_predefined=resolve_predefined,
+            ),
+            headers={**self.custom_headers, "Content-Type": "application/json"},
+        )
+        response.raise_for_status()
+        return ScopeGuardV2Classification.model_validate(response.json())
+
+    def _batch_classify(
+        self,
+        conversations: list[ScopeGuardV2Input],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2 | None = None,
+        ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
+        resolve_predefined: bool = True,
+        model: str | None = None,
+        **kwargs,
+    ) -> list[ScopeGuardV2Classification]:
+        response = requests.post(
+            f"{self.api_url}/orbitals/scope-guard-v2/batch-classify",
+            json=_build_batch_classify_request_data(
+                model=model if model is not None else self.default_model,
+                conversations=conversations,
+                ai_service_description=ai_service_description,
+                ai_service_descriptions=ai_service_descriptions,
+                resolve_predefined=resolve_predefined,
+            ),
+            headers={**self.custom_headers, "Content-Type": "application/json"},
+        )
+        response.raise_for_status()
+        return [
+            ScopeGuardV2Classification.model_validate(result)
+            for result in response.json()
+        ]
+
 
 @AsyncScopeGuardV2.register_guard("api")
 class AsyncAPIScopeGuardV2(AsyncScopeGuardV2):
@@ -306,3 +383,58 @@ class AsyncAPIScopeGuardV2(AsyncScopeGuardV2):
             response_data = await response.json()
 
         return [_parse_output(result) for result in response_data]
+
+    async def _classify(
+        self,
+        conversation: ScopeGuardV2Input,
+        *,
+        ai_service_description: str | AIServiceDescriptionV2,
+        resolve_predefined: bool = True,
+        model: str | None = None,
+        **kwargs,
+    ) -> ScopeGuardV2Classification:
+        async with aiohttp.ClientSession() as session:
+            response = await session.post(
+                f"{self.api_url}/orbitals/scope-guard-v2/classify",
+                json=_build_classify_request_data(
+                    model=model if model is not None else self.default_model,
+                    conversation=conversation,
+                    ai_service_description=ai_service_description,
+                    resolve_predefined=resolve_predefined,
+                ),
+                headers={**self.custom_headers, "Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+            response_data = await response.json()
+
+        return ScopeGuardV2Classification.model_validate(response_data)
+
+    async def _batch_classify(
+        self,
+        conversations: list[ScopeGuardV2Input],
+        *,
+        ai_service_description: str | AIServiceDescriptionV2 | None = None,
+        ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
+        resolve_predefined: bool = True,
+        model: str | None = None,
+        **kwargs,
+    ) -> list[ScopeGuardV2Classification]:
+        async with aiohttp.ClientSession() as session:
+            response = await session.post(
+                f"{self.api_url}/orbitals/scope-guard-v2/batch-classify",
+                json=_build_batch_classify_request_data(
+                    model=model if model is not None else self.default_model,
+                    conversations=conversations,
+                    ai_service_description=ai_service_description,
+                    ai_service_descriptions=ai_service_descriptions,
+                    resolve_predefined=resolve_predefined,
+                ),
+                headers={**self.custom_headers, "Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+            response_data = await response.json()
+
+        return [
+            ScopeGuardV2Classification.model_validate(result)
+            for result in response_data
+        ]
