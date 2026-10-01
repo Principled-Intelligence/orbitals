@@ -11,13 +11,13 @@ if TYPE_CHECKING:
     from .vllm import AsyncVLLMApiScopeGuardV2, VLLMScopeGuardV2
 
 from ...types import AIServiceDescriptionV2
-from ..prompting import ALL_FIELDS, resolve_selection
 from ..modeling import (
     ScopeGuardV2Classification,
     ScopeGuardV2Input,
     ScopeGuardV2InputTypeAdapter,
     ScopeGuardV2Output,
 )
+from ..prompting import ALL_FIELDS, resolve_selection
 from ..safety_principles import augment_with_default_safety_principles_v2
 
 

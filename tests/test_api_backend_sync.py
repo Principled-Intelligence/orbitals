@@ -100,7 +100,9 @@ def test_validate_serialises_structured_ai_service_description(mocked_post):
 
     body = mocked_post.call_args.kwargs["json"]
     assert isinstance(body["ai_service_description"], dict)
-    assert body["ai_service_description"]["identity_role"] == "Parcel delivery assistant"
+    assert (
+        body["ai_service_description"]["identity_role"] == "Parcel delivery assistant"
+    )
     assert body["ai_service_description"]["context"] == "Online logistics."
 
 

@@ -79,7 +79,9 @@ def compare(reference: list[dict], candidate: list[dict]) -> tuple[list[str], in
     return mismatches, identical
 
 
-def render(reference: list[dict], candidate: list[dict], mismatches: list[str], identical: int) -> str:
+def render(
+    reference: list[dict], candidate: list[dict], mismatches: list[str], identical: int
+) -> str:
     total = len(reference)
     lines = [
         f"scope_class agreement: {total - len(mismatches)}/{total}",
@@ -88,7 +90,9 @@ def render(reference: list[dict], candidate: list[dict], mismatches: list[str], 
     by_name = {c["name"]: c for c in candidate}
     for r in reference:
         if r["name"] in mismatches:
-            lines.append(f"  {r['name']:<16} {r['scope_class']!r} -> {by_name[r['name']]['scope_class']!r}")
+            lines.append(
+                f"  {r['name']:<16} {r['scope_class']!r} -> {by_name[r['name']]['scope_class']!r}"
+            )
     return "\n".join(lines)
 
 

@@ -39,7 +39,7 @@ from orbitals.claim_extractor import ClaimExtractor
 
 ce = ClaimExtractor(
     backend="vllm",  # or "hf" for huggingface
-    model="claim-extractor-4B-q",    # for the 4B Qwen-family model
+    model="claim-extractor-4B-q",  # for the 4B Qwen-family model
     # model="claim-extractor-2B-q",  # for the 2B Qwen-family model
 )
 
@@ -86,8 +86,8 @@ Initialize the `ClaimExtractor` object by picking a backend — `vllm` (recommen
 from orbitals.claim_extractor import ClaimExtractor
 
 ce = ClaimExtractor(
-    backend="vllm",                   # or "hf"
-    model="claim-extractor-4B-q",     # for the 4B Qwen-family model
+    backend="vllm",  # or "hf"
+    model="claim-extractor-4B-q",  # for the 4B Qwen-family model
     # model="claim-extractor-2B-q",   # for the 2B Qwen-family model
 )
 ```
@@ -128,8 +128,12 @@ ai_service_description = "You are a virtual assistant for a parcel delivery serv
 
 result = ce.extract(message, ai_service_description=ai_service_description)
 
-assert len(result.extractions.claims) == 0 or isinstance(result.extractions.claims[0], Claim)
-assert len(result.extractions.intents) == 0 or isinstance(result.extractions.intents[0], Intent)
+assert len(result.extractions.claims) == 0 or isinstance(
+    result.extractions.claims[0], Claim
+)
+assert len(result.extractions.intents) == 0 or isinstance(
+    result.extractions.intents[0], Intent
+)
 
 for claim in result.extractions.claims:
     # claim.subtype is one of: "Factoid", "Capability", "User Assertion", "Unverifiable"
@@ -151,7 +155,10 @@ from orbitals.claim_extractor import ClaimExtractor
 ce = ClaimExtractor(backend="vllm", model="claim-extractor-4B-q", intents_only=True)
 
 result = ce.extract(
-    {"role": "user", "content": "Can you book me an appointment for next Tuesday morning?"},
+    {
+        "role": "user",
+        "content": "Can you book me an appointment for next Tuesday morning?",
+    },
     ai_service_description=ai_service_description,
 )
 
@@ -164,10 +171,14 @@ assert result.extractions.claims == []
 `intents_only` is supported on every backend (`vllm`, `hf`, `api`) and is available both as a constructor default and as a per-call override on `extract` / `batch_extract`:
 
 ```python
-ce = ClaimExtractor(backend="vllm", model="claim-extractor-4B-q")  # default: full extraction
+ce = ClaimExtractor(
+    backend="vllm", model="claim-extractor-4B-q"
+)  # default: full extraction
 
 # override per call — extract only intents for this request
-result = ce.extract(message, ai_service_description=ai_service_description, intents_only=True)
+result = ce.extract(
+    message, ai_service_description=ai_service_description, intents_only=True
+)
 ```
 
 When serving, set the server-side default with the `--intents-only` flag on `orbitals claim-extractor serve`, or pass `"intents_only": true` on individual requests (see [Serving](#serving-claimextractor-on-premise-or-on-your-infrastructure) below).

@@ -88,19 +88,12 @@ async def test_async_validate_hits_documented_endpoint(captured, patch_session):
     assert result.scope_class == ScopeClass.RESTRICTED
 
 
-async def test_async_batch_validate_hits_documented_endpoint(
-    captured, patch_session
-):
+async def test_async_batch_validate_hits_documented_endpoint(captured, patch_session):
     patch_session["payload"] = [_default_payload(), _default_payload()]
     sg = AsyncScopeGuard(backend="api", api_url="http://example.com")
-    results = await sg.batch_validate(
-        ["q1", "q2"], ai_service_description="desc"
-    )
+    results = await sg.batch_validate(["q1", "q2"], ai_service_description="desc")
 
-    assert (
-        captured["url"]
-        == "http://example.com/orbitals/scope-guard/batch-validate"
-    )
+    assert captured["url"] == "http://example.com/orbitals/scope-guard/batch-validate"
     assert len(results) == 2
     assert all(isinstance(r, ScopeGuardOutput) for r in results)
 
@@ -126,9 +119,7 @@ async def test_async_batch_validate_body_with_per_conv_descriptions(
 ):
     patch_session["payload"] = [_default_payload(), _default_payload()]
     sg = AsyncScopeGuard(backend="api", api_url="http://example.com")
-    await sg.batch_validate(
-        ["q1", "q2"], ai_service_descriptions=["d1", "d2"]
-    )
+    await sg.batch_validate(["q1", "q2"], ai_service_descriptions=["d1", "d2"])
 
     assert captured["json"]["conversations"] == ["q1", "q2"]
     assert captured["json"]["ai_service_descriptions"] == ["d1", "d2"]

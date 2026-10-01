@@ -83,12 +83,8 @@ def serve(
     top_p: float = typer.Option(
         0.8, help="top_p (nucleus) sampling for vLLM (1.0 = off)"
     ),
-    top_k: int = typer.Option(
-        20, help="top_k sampling for vLLM (-1 = off)"
-    ),
-    min_p: float = typer.Option(
-        0.0, help="min_p sampling for vLLM (0.0 = off)"
-    ),
+    top_k: int = typer.Option(20, help="top_k sampling for vLLM (-1 = off)"),
+    min_p: float = typer.Option(0.0, help="min_p sampling for vLLM (0.0 = off)"),
 ):
     vllm_model = ClaimExtractor.maybe_map_model(vllm_model)
 

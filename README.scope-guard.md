@@ -54,7 +54,7 @@ from orbitals.scope_guard import ScopeGuard
 
 sg = ScopeGuard(
     backend="vllm",
-    model="scope-guard-q",    # for the Qwen-family model
+    model="scope-guard-q",  # for the Qwen-family model
     # model="scope-guard-g",  # for the Gemma-family model
 )
 
@@ -133,9 +133,9 @@ If you are using the self-hosted models, you can choose between the `vllm` and `
 from orbitals.scope_guard import ScopeGuard
 
 sg = ScopeGuard(
-    model="scope-guard-q",        # for the Qwen-family model
+    model="scope-guard-q",  # for the Qwen-family model
     # model="scope-guard-g",      # for the Gemma-family model
-    backend="vllm",               # or "huggingface"
+    backend="vllm",  # or "huggingface"
 )
 ```
 
@@ -156,11 +156,12 @@ The possible scope classes returned by `scope-guard` are:
 
 ```python
 from orbitals.scope_guard import ScopeClass
-print(ScopeClass.DIRECTLY_SUPPORTED.value)    # "Directly Supported"
-print(ScopeClass.POTENTIALLY_SUPPORTED.value) # "Potentially Supported"
-print(ScopeClass.OUT_OF_SCOPE.value)          # "Out of Scope"
-print(ScopeClass.RESTRICTED.value)            # "Restricted"
-print(ScopeClass.CHIT_CHAT.value)             # "Chit Chat"
+
+print(ScopeClass.DIRECTLY_SUPPORTED.value)  # "Directly Supported"
+print(ScopeClass.POTENTIALLY_SUPPORTED.value)  # "Potentially Supported"
+print(ScopeClass.OUT_OF_SCOPE.value)  # "Out of Scope"
+print(ScopeClass.RESTRICTED.value)  # "Restricted"
+print(ScopeClass.CHIT_CHAT.value)  # "Chit Chat"
 ```
 
 For example, you can check the scope class of a validation result as follows:
@@ -186,7 +187,7 @@ The `validate` method is flexible and accepts various input formats for the conv
 ```python
 result = sg.validate(
     "When is my package scheduled to arrive?",
-    ai_service_description=ai_service_description
+    ai_service_description=ai_service_description,
 )
 ```
 
@@ -194,11 +195,8 @@ result = sg.validate(
 
 ```python
 result = sg.validate(
-    {
-        "role": "user", 
-        "content": "When is my package scheduled to arrive?"
-    },
-    ai_service_description=ai_service_description
+    {"role": "user", "content": "When is my package scheduled to arrive?"},
+    ai_service_description=ai_service_description,
 )
 ```
 
@@ -207,20 +205,17 @@ result = sg.validate(
 ```python
 result = sg.validate(
     [
+        {"role": "user", "content": "I ordered a package, tracking number 1234567890"},
         {
-            "role": "user", 
-            "content": "I ordered a package, tracking number 1234567890"
+            "role": "assistant",
+            "content": "Great, the package is in transit. What would you like to know?",
         },
         {
-            "role": "assistant", 
-            "content": "Great, the package is in transit. What would you like to know?"
+            "role": "user",
+            "content": "If it doesn't arrive tomorrow, can I get a refund",
         },
-        {
-            "role": "user", 
-            "content": "If it doesn't arrive tomorrow, can I get a refund"    
-        },
-    ], 
-    ai_service_description=ai_service_description
+    ],
+    ai_service_description=ai_service_description,
 )
 ```
 
@@ -268,13 +263,10 @@ You can process multiple conversations at once using `batch_validate`.
 ```python
 queries = [
     "If the package hasn't arrived by tomorrow, can I get my money back?",
-    "When is the package expected to be delivered?"
+    "When is the package expected to be delivered?",
 ]
 
-result = sg.batch_validate(
-    queries,
-    ai_service_description=ai_service_description
-)
+result = sg.batch_validate(queries, ai_service_description=ai_service_description)
 ```
 
 #### Multiple AI Service Descriptions
@@ -282,13 +274,10 @@ result = sg.batch_validate(
 ```python
 ai_service_descriptions = [
     "You are a virtual assistant for Postal Service. You only answer questions about package tracking. Never respond to refund requests.",
-    "You are a virtual assistant for a Courier. You answer questions about package tracking. Never respond to refund requests."
+    "You are a virtual assistant for a Courier. You answer questions about package tracking. Never respond to refund requests.",
 ]
 
-result = sg.batch_validate(
-    queries,
-    ai_service_descriptions=ai_service_descriptions
-)
+result = sg.batch_validate(queries, ai_service_descriptions=ai_service_descriptions)
 ```
 
 ## Serving ScopeGuard on-premise or on your infrastructure
@@ -348,14 +337,11 @@ Response:
 ```python
 from orbitals.scope_guard import ScopeGuard
 
-sg = ScopeGuard(
-    backend="api",
-    api_url="http://localhost:8000"
-)
+sg = ScopeGuard(backend="api", api_url="http://localhost:8000")
 
 result = sg.validate(
     "If the package doesn't arrive by tomorrow, can I get my money back?",
-    ai_service_description="You are a virtual assistant for a parcel delivery service. You can only answer questions about package tracking. Never respond to requests for refunds."
+    ai_service_description="You are a virtual assistant for a parcel delivery service. You can only answer questions about package tracking. Never respond to requests for refunds.",
 )
 ```
 
@@ -364,14 +350,11 @@ result = sg.validate(
 ```python
 from orbitals.scope_guard import AsyncScopeGuard
 
-sg = AsyncScopeGuard(
-    backend="api",
-    api_url="http://localhost:8000"
-)
+sg = AsyncScopeGuard(backend="api", api_url="http://localhost:8000")
 
 result = await sg.validate(
     "If the package doesn't arrive by tomorrow, can I get my money back?",
-    ai_service_description="You are a virtual assistant for a parcel delivery service. You can only answer questions about package tracking. Never respond to requests for refunds."
+    ai_service_description="You are a virtual assistant for a parcel delivery service. You can only answer questions about package tracking. Never respond to requests for refunds.",
 )
 ```
 

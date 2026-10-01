@@ -82,7 +82,9 @@ def serve(
         typer.echo(f"Warning: {conflict.message}", err=True)
 
     if decision_temperature <= 0:
-        raise typer.BadParameter("must be positive", param_hint="--decision-temperature")
+        raise typer.BadParameter(
+            "must be positive", param_hint="--decision-temperature"
+        )
     os.environ["SCOPE_GUARD_V2_VLLM_MODEL"] = vllm_model
     os.environ["SCOPE_GUARD_V2_VLLM_SERVING_URL"] = f"http://localhost:{vllm_port}"
     os.environ["SCOPE_GUARD_V2_DECISION_TEMPERATURE"] = str(decision_temperature)

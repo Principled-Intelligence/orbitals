@@ -85,13 +85,13 @@ The possible scope classes returned by `scope-guard-v2` are:
 ```python
 from orbitals.scope_guard_v2 import ScopeClass
 
-print(ScopeClass.DIRECTLY_SUPPORTED.value)    # "Directly Supported"
-print(ScopeClass.POTENTIALLY_SUPPORTED.value) # "Potentially Supported"
-print(ScopeClass.PREDEFINED_ANSWER.value)     # "Predefined Answer"
-print(ScopeClass.HUMAN_OVERSIGHT.value)       # "Human Oversight"
-print(ScopeClass.OUT_OF_SCOPE.value)          # "Out of Scope"
-print(ScopeClass.RESTRICTED.value)            # "Restricted"
-print(ScopeClass.CHIT_CHAT.value)             # "Chit Chat"
+print(ScopeClass.DIRECTLY_SUPPORTED.value)  # "Directly Supported"
+print(ScopeClass.POTENTIALLY_SUPPORTED.value)  # "Potentially Supported"
+print(ScopeClass.PREDEFINED_ANSWER.value)  # "Predefined Answer"
+print(ScopeClass.HUMAN_OVERSIGHT.value)  # "Human Oversight"
+print(ScopeClass.OUT_OF_SCOPE.value)  # "Out of Scope"
+print(ScopeClass.RESTRICTED.value)  # "Restricted"
+print(ScopeClass.CHIT_CHAT.value)  # "Chit Chat"
 ```
 
 For example, you can check the scope class of a validation result as follows:
@@ -210,8 +210,14 @@ result = sg.validate(
 result = sg.validate(
     [
         {"role": "user", "content": "I ordered a package, tracking number 1234567890"},
-        {"role": "assistant", "content": "Great, the package is in transit. What would you like to know?"},
-        {"role": "user", "content": "If it doesn't arrive tomorrow, can I get a refund"},
+        {
+            "role": "assistant",
+            "content": "Great, the package is in transit. What would you like to know?",
+        },
+        {
+            "role": "user",
+            "content": "If it doesn't arrive tomorrow, can I get a refund",
+        },
     ],
     ai_service_description=ai_service_description,
 )
@@ -225,7 +231,9 @@ You can choose which fields the model emits, either per guard or per call. `scop
 
 ```python
 # per guard
-sg = ScopeGuardV2(backend="api", api_key="principled_1234", output_fields=["scope_class"])
+sg = ScopeGuardV2(
+    backend="api", api_key="principled_1234", output_fields=["scope_class"]
+)
 
 # per call
 result = sg.validate(
@@ -234,9 +242,9 @@ result = sg.validate(
     output_fields=["reasoning", "scope_class"],
 )
 
-print(result.scope_class)      # always present
-print(result.reasoning)        # present when requested, otherwise None
-print(result.evidences)        # None -- not requested
+print(result.scope_class)  # always present
+print(result.reasoning)  # present when requested, otherwise None
+print(result.evidences)  # None -- not requested
 ```
 
 Fields you did not request come back as `None` on the result object.
@@ -263,14 +271,18 @@ Against a server started that way, a client that asks for nothing inherits the s
 `classify` returns a probability for every scope class instead of generated text. The model's answer to a `scope_class`-only request is `{"scope_class": "<class>"}`, and the seven class names start with distinct tokens, so one forward pass over that position gives a seven-way distribution. On the eight public safety benchmarks the argmax matches guided decoding on 98% of rows with the same accuracy, at about a tenth of the latency, and every verdict carries a probability.
 
 ```python
-sg = AsyncScopeGuardV2(backend="vllm-api", model="principled-intelligence/scope-guard-v2-4B-q-2609")
+sg = AsyncScopeGuardV2(
+    backend="vllm-api", model="principled-intelligence/scope-guard-v2-4B-q-2609"
+)
 
 result = await sg.classify(user_query, ai_service_description=ai_service_description)
-print(result.scope_class)               # ScopeClass.PREDEFINED_ANSWER
-print(result.probabilities)             # {"Predefined Answer": 0.93, "Directly Supported": 0.05, ...}
-print(result.confidence)                # 0.93
+print(result.scope_class)  # ScopeClass.PREDEFINED_ANSWER
+print(
+    result.probabilities
+)  # {"Predefined Answer": 0.93, "Directly Supported": 0.05, ...}
+print(result.confidence)  # 0.93
 if result.predefined_response:
-    print(result.predefined_response)      # the text to send back
+    print(result.predefined_response)  # the text to send back
 ```
 
 - **Calibration.** As released the probabilities are over-confident. Divide the logits by a temperature fitted on a labelled sample from your traffic, set once per deployment: `decision_temperature` on the constructor or `--decision-temperature` on `orbitals scope-guard-v2 serve`; the value applied is reported as `temperature` on every result. On the public benchmarks the fitted value ranges from 1.2 to 2.8, about 1.7 overall; the class never depends on it. To try another value without redeploying, rescale the returned probabilities: `p_i' = softmax(log(p_i) / T)`, which is exact.

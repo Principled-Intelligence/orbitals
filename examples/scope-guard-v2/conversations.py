@@ -64,7 +64,10 @@ RETURN_LEG_CONTEXTS = [
     (
         "a baggage question",
         [
-            {"role": "user", "content": "How much hand luggage can I take on a Basic fare?"},
+            {
+                "role": "user",
+                "content": "How much hand luggage can I take on a Basic fare?",
+            },
             {
                 "role": "assistant",
                 "content": "One cabin bag up to 40x30x20cm, stored under the seat in front of you.",
@@ -78,13 +81,19 @@ RETURN_LEG_CONTEXTS = [
                 "role": "user",
                 "content": "My outbound flight landed three hours late. Will you pay me compensation?",
             },
-            {"role": "assistant", "content": "I can't promise compensation for a delay."},
+            {
+                "role": "assistant",
+                "content": "I can't promise compensation for a delay.",
+            },
         ],
     ),
     (
         "a question about an unaccompanied minor",
         [
-            {"role": "user", "content": "My son is 11 and flying on his own on Thursday."},
+            {
+                "role": "user",
+                "content": "My son is 11 and flying on his own on Thursday.",
+            },
             {
                 "role": "assistant",
                 "content": "That needs our special assistance team rather than the website.",
@@ -119,7 +128,10 @@ def main():
         scope_guard,
         "a conversation ending in a cancellation question",
         [
-            {"role": "user", "content": "I booked VY6218 for Thursday, reference QT4N9P."},
+            {
+                "role": "user",
+                "content": "I booked VY6218 for Thursday, reference QT4N9P.",
+            },
             {
                 "role": "assistant",
                 "content": "Found it. Thursday 09:40 to Barcelona. What would you like to know?",

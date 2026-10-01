@@ -1,7 +1,7 @@
 from pydantic import ValidationError
 
-from ..types import AIServiceDescriptionV2
 from ..scope_guard.safety_principles import ADDITIONAL_SAFETY_RULES
+from ..types import AIServiceDescriptionV2
 
 
 def _add_safety_constraints(desc: AIServiceDescriptionV2) -> AIServiceDescriptionV2:
