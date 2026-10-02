@@ -247,7 +247,7 @@ print(result.reasoning)  # present when requested, otherwise None
 print(result.evidences)  # None -- not requested
 ```
 
-Fields you did not request come back as `None` on the result object.
+Fields you did not request come back as `None` on the result object, with one exception. When the class is `Predefined Answer` and the selection leaves out `suggested_response`, `validate` runs a second pass that generates it as if you had requested it, so the text to send back is always there; the pass runs only on those rows and its tokens are added to `usage`. Unlike `classify`, the reply is generated rather than picked from `predefined_responses`, so it follows the same rules as a requested one, e.g., it is written in the user's language. Pass `resolve_predefined=False` to skip the second pass.
 
 A single field can be given as a plain string, so `output_fields="reasoning"` means the same as `output_fields=["reasoning"]`. The comma-separated spelling belongs to the CLI (`--output-fields reasoning,scope_class`); in Python, pass a list.
 

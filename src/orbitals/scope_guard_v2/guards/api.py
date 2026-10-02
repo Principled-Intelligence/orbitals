@@ -65,6 +65,7 @@ def _build_request_data(
     skip_evidences: bool | None,
     ai_service_description: str | AIServiceDescriptionV2,
     output_fields: Iterable[str] | None = None,
+    resolve_predefined: bool = True,
 ) -> dict:
     return {
         **({"model": model} if model is not None else {}),
@@ -73,6 +74,7 @@ def _build_request_data(
         if isinstance(ai_service_description, AIServiceDescriptionV2)
         else ai_service_description,
         **_selection_fields(output_fields, skip_evidences),
+        **({} if resolve_predefined else {"resolve_predefined": False}),
     }
 
 
@@ -83,6 +85,7 @@ def _build_batch_request_data(
     ai_service_description: str | AIServiceDescriptionV2 | None = None,
     ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
     output_fields: Iterable[str] | None = None,
+    resolve_predefined: bool = True,
 ) -> dict:
     return {
         **({"model": model} if model is not None else {}),
@@ -110,6 +113,7 @@ def _build_batch_request_data(
             else {}
         ),
         **_selection_fields(output_fields, skip_evidences),
+        **({} if resolve_predefined else {"resolve_predefined": False}),
     }
 
 
@@ -204,6 +208,7 @@ class APIScopeGuardV2(ScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         model: str | None = None,
         **kwargs,
     ) -> ScopeGuardV2Output:
@@ -215,6 +220,7 @@ class APIScopeGuardV2(ScopeGuardV2):
                 conversation=conversation,
                 output_fields=eff_fields,
                 skip_evidences=eff_skip,
+                resolve_predefined=resolve_predefined,
                 ai_service_description=ai_service_description,
             ),
             headers={**self.custom_headers, "Content-Type": "application/json"},
@@ -230,6 +236,7 @@ class APIScopeGuardV2(ScopeGuardV2):
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         model: str | None = None,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
@@ -241,6 +248,7 @@ class APIScopeGuardV2(ScopeGuardV2):
                 conversations=conversations,
                 output_fields=eff_fields,
                 skip_evidences=eff_skip,
+                resolve_predefined=resolve_predefined,
                 ai_service_description=ai_service_description,
                 ai_service_descriptions=ai_service_descriptions,
             ),
@@ -333,6 +341,7 @@ class AsyncAPIScopeGuardV2(AsyncScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         model: str | None = None,
         **kwargs,
     ) -> ScopeGuardV2Output:
@@ -345,6 +354,7 @@ class AsyncAPIScopeGuardV2(AsyncScopeGuardV2):
                     conversation=conversation,
                     output_fields=eff_fields,
                     skip_evidences=eff_skip,
+                    resolve_predefined=resolve_predefined,
                     ai_service_description=ai_service_description,
                 ),
                 headers={**self.custom_headers, "Content-Type": "application/json"},
@@ -362,6 +372,7 @@ class AsyncAPIScopeGuardV2(AsyncScopeGuardV2):
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         model: str | None = None,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
@@ -374,6 +385,7 @@ class AsyncAPIScopeGuardV2(AsyncScopeGuardV2):
                     conversations=conversations,
                     output_fields=eff_fields,
                     skip_evidences=eff_skip,
+                    resolve_predefined=resolve_predefined,
                     ai_service_description=ai_service_description,
                     ai_service_descriptions=ai_service_descriptions,
                 ),
