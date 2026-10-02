@@ -229,9 +229,16 @@ class ScopeGuardV2(BaseScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> ScopeGuardV2Output:
+        """Classify one conversation, emitting the selected output fields.
+
+        A Predefined Answer always carries `suggested_response`: when the selection
+        leaves it out, a second pass generates it as if it had been requested
+        (`resolve_predefined=False` skips it).
+        """
         conversation = self._validate_conversation(conversation)
         include = self._resolve_include_default_safety_principles(
             include_default_safety_principles
@@ -242,6 +249,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
             output_fields=output_fields,
+            resolve_predefined=resolve_predefined,
             **kwargs,
         )
 
@@ -252,6 +260,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         **kwargs,
     ) -> ScopeGuardV2Output:
         raise NotImplementedError
@@ -264,6 +273,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
@@ -289,6 +299,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
             ai_service_descriptions=ai_service_descriptions,
             skip_evidences=skip_evidences,
             output_fields=output_fields,
+            resolve_predefined=resolve_predefined,
             **kwargs,
         )
 
@@ -300,6 +311,7 @@ class ScopeGuardV2(BaseScopeGuardV2):
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
         raise NotImplementedError
@@ -438,9 +450,16 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> ScopeGuardV2Output:
+        """Classify one conversation, emitting the selected output fields.
+
+        A Predefined Answer always carries `suggested_response`: when the selection
+        leaves it out, a second pass generates it as if it had been requested
+        (`resolve_predefined=False` skips it).
+        """
         conversation = self._validate_conversation(conversation)
         include = self._resolve_include_default_safety_principles(
             include_default_safety_principles
@@ -451,6 +470,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
             output_fields=output_fields,
+            resolve_predefined=resolve_predefined,
             **kwargs,
         )
 
@@ -461,6 +481,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         **kwargs,
     ) -> ScopeGuardV2Output:
         raise NotImplementedError
@@ -473,6 +494,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         include_default_safety_principles: bool | None = None,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
@@ -498,6 +520,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
             ai_service_descriptions=ai_service_descriptions,
             skip_evidences=skip_evidences,
             output_fields=output_fields,
+            resolve_predefined=resolve_predefined,
             **kwargs,
         )
 
@@ -509,6 +532,7 @@ class AsyncScopeGuardV2(BaseScopeGuardV2):
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
         raise NotImplementedError

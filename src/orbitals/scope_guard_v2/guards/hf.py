@@ -31,6 +31,7 @@ from .vllm import (
     _classification,
     _generated,
     _grammar_choices,
+    _reply_missing,
     _selected,
 )
 
@@ -185,6 +186,23 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
             result.predefined_response = candidates[0]
             return result
 
+        result.predefined_response, second = self._continue_predefined(
+            conversation, ai_service_description, candidates
+        )
+        result.usage = _add_usage(result.usage, second)
+        return result
+
+    def _continue_predefined(
+        self,
+        conversation: ScopeGuardV2Input,
+        ai_service_description: str | AIServiceDescriptionV2,
+        candidates: list[str],
+    ) -> tuple[str, LLMUsage | None]:
+        """The reply to a Predefined Answer: one of `candidates`, or generated if empty."""
+        import torch
+
+        tokenizer = self._pipeline.tokenizer
+        model = self._pipeline.model
         prompt = (
             build_prompt(
                 tokenizer,
@@ -229,15 +247,12 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
         with torch.inference_mode():
             generated = model.generate(**inputs, **generate_kwargs)[0, start:]
         text = tokenizer.decode(generated, skip_special_tokens=True)
-        result.predefined_response = (
-            _selected(text, candidates) if candidates else _generated(text)
+        return (
+            _selected(text, candidates) if candidates else _generated(text),
+            self._usage(
+                {"prompt_tokens": start, "completion_tokens": generated.shape[0]}
+            ),
         )
-        second = self._usage(
-            {"prompt_tokens": start, "completion_tokens": generated.shape[0]}
-        )
-        if result.usage is not None and second is not None:
-            result.usage = _add_usage(result.usage, second)
-        return result
 
     def _batch_classify(
         self,
@@ -269,13 +284,16 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         **kwargs,
     ) -> ScopeGuardV2Output:
-        selection = self._resolve_output_fields(output_fields, skip_evidences)
-        record = self._pipeline(
-            (conversation, ai_service_description), output_fields=selection
+        return self._batch_validate(
+            [conversation],
+            ai_service_description=ai_service_description,
+            skip_evidences=skip_evidences,
+            output_fields=output_fields,
+            resolve_predefined=resolve_predefined,
         )[0]
-        return _parse(record, selection, self.model, self._usage(record))
 
     def _batch_validate(
         self,
@@ -285,6 +303,7 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
         selection = self._resolve_output_fields(output_fields, skip_evidences)
@@ -296,7 +315,12 @@ class HuggingFaceScopeGuardV2(ScopeGuardV2):
             raise ValueError("an AI service description is required")
 
         pipeline_outputs = self._pipeline(pipeline_inputs, output_fields=selection)
-        return [
+        results = [
             _parse(out[0], selection, self.model, self._usage(out[0]))
             for out in pipeline_outputs
         ]
+        for result, (c, ad) in zip(results, pipeline_inputs):
+            if _reply_missing(result, selection, resolve_predefined):
+                result.suggested_response, second = self._continue_predefined(c, ad, [])
+                result.usage = _add_usage(result.usage, second)
+        return results

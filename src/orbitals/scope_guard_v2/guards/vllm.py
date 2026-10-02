@@ -95,7 +95,9 @@ def _generated(text: str) -> str:
     return value.strip()
 
 
-def _add_usage(a: LLMUsage, b: LLMUsage) -> LLMUsage:
+def _add_usage(a: LLMUsage | None, b: LLMUsage | None) -> LLMUsage | None:
+    if a is None or b is None:
+        return None
     return LLMUsage(
         prompt_tokens=a.prompt_tokens + b.prompt_tokens,
         completion_tokens=a.completion_tokens + b.completion_tokens,
@@ -115,6 +117,17 @@ def _to_output(
         suggested_response=data.get("suggested_response"),
         model=model,
         usage=usage,
+    )
+
+
+def _reply_missing(
+    output: ScopeGuardV2Output, selection: tuple[str, ...], resolve_predefined: bool
+) -> bool:
+    """A Predefined Answer whose reply the selection left out."""
+    return (
+        resolve_predefined
+        and output.scope_class is ScopeClass.PREDEFINED_ANSWER
+        and "suggested_response" not in selection
     )
 
 
@@ -183,6 +196,39 @@ class VLLMScopeGuardV2(ScopeGuardV2):
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
+        )
+
+    def _predefined_prompt(
+        self,
+        conversation: ScopeGuardV2Input,
+        ai_service_description: str | AIServiceDescriptionV2,
+    ) -> str:
+        return (
+            build_prompt(
+                self.tokenizer,
+                conversation,
+                ai_service_description,
+                output_fields=["scope_class", "suggested_response"],
+            )
+            + PREDEFINED_PREFIX
+        )
+
+    def _predefined_params(self, candidates: list[str]):
+        """Pick among the listed texts, or generate the reply when there are none."""
+        import vllm
+
+        if candidates:
+            return vllm.SamplingParams(
+                max_tokens=self.max_tokens,
+                temperature=0.0,
+                structured_outputs=vllm.sampling_params.StructuredOutputsParams(
+                    choice=_grammar_choices(candidates)
+                ),
+            )
+        return vllm.SamplingParams(
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            stop=[_RESPONSE_STOP],
         )
 
     def _classify(
@@ -254,39 +300,15 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         if not pending:
             return results
 
-        prompts = [
-            build_prompt(
-                self.tokenizer,
-                c,
-                ad,
-                output_fields=["scope_class", "suggested_response"],
-            )
-            + PREDEFINED_PREFIX
-            for _, c, ad, _ in pending
-        ]
-        params = [
-            vllm.SamplingParams(
-                max_tokens=self.max_tokens,
-                temperature=0.0,
-                structured_outputs=vllm.sampling_params.StructuredOutputsParams(
-                    choice=_grammar_choices(candidates)
-                ),
-            )
-            if candidates
-            else vllm.SamplingParams(
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                stop=[_RESPONSE_STOP],
-            )
-            for _, _, _, candidates in pending
-        ]
+        prompts = [self._predefined_prompt(c, ad) for _, c, ad, _ in pending]
+        params = [self._predefined_params(candidates) for *_, candidates in pending]
         outputs = self.llm.generate(prompts, params, use_tqdm=False)
         for (result, _, _, candidates), output in zip(pending, outputs):
             text = output.outputs[0].text
             result.predefined_response = (
                 _selected(text, candidates) if candidates else _generated(text)
             )
-            result.usage = _add_usage(result.usage, self._offline_usage(output))  # type: ignore[invalid-argument-type]
+            result.usage = _add_usage(result.usage, self._offline_usage(output))
         return results
 
     def _validate(
@@ -296,6 +318,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         **kwargs,
     ) -> ScopeGuardV2Output:
         return self._batch_validate(
@@ -303,6 +326,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
             output_fields=output_fields,
+            resolve_predefined=resolve_predefined,
         )[0]
 
     def _batch_validate(
@@ -313,6 +337,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         **kwargs,
     ) -> list[ScopeGuardV2Output]:
         import vllm
@@ -339,7 +364,7 @@ class VLLMScopeGuardV2(ScopeGuardV2):
             ),
         )
         outputs = self.llm.generate(prompts, sampling_params, use_tqdm=False)
-        return [
+        results = [
             _to_output(
                 response_model.model_validate(json.loads(output.outputs[0].text)),
                 self.model,
@@ -347,6 +372,23 @@ class VLLMScopeGuardV2(ScopeGuardV2):
             )
             for output in outputs
         ]
+
+        pending = [
+            (result, c, ad)
+            for result, (c, ad) in zip(results, pairs)
+            if _reply_missing(result, selection, resolve_predefined)
+        ]
+        if not pending:
+            return results
+        outputs = self.llm.generate(
+            [self._predefined_prompt(c, ad) for _, c, ad in pending],
+            self._predefined_params([]),
+            use_tqdm=False,
+        )
+        for (result, _, _), output in zip(pending, outputs):
+            result.suggested_response = _generated(output.outputs[0].text)
+            result.usage = _add_usage(result.usage, self._offline_usage(output))
+        return results
 
 
 @AsyncScopeGuardV2.register_guard("vllm-api")
@@ -397,6 +439,8 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         selection: tuple[str, ...],
         prefill: bool,
         chat_templating_tokenizer: str | None = None,
+        *,
+        resolve_predefined: bool,
     ) -> ScopeGuardV2Output:
         if chat_templating_tokenizer is not None:
             tokenizer = _get_tokenizer(chat_templating_tokenizer)
@@ -440,9 +484,15 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         except pydantic.ValidationError as e:
             raise ValueError(f"Failed to validate generated text: {e}")
 
-        return _to_output(
+        output = _to_output(
             validated, model_name, self._api_usage(response_json, tokenizer)
         )
+        if _reply_missing(output, selection, resolve_predefined):
+            output.suggested_response, second = await self._continue_predefined(
+                tokenizer, model_name, conversation, ai_service_description, []
+            )
+            output.usage = _add_usage(output.usage, second)
+        return output
 
     async def _completion(self, body: dict) -> dict:
         async with aiohttp.ClientSession() as session:
@@ -566,6 +616,21 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
             result.predefined_response = candidates[0]
             return result
 
+        result.predefined_response, second = await self._continue_predefined(
+            tokenizer, model_name, conversation, ai_service_description, candidates
+        )
+        result.usage = _add_usage(usage, second)
+        return result
+
+    async def _continue_predefined(
+        self,
+        tokenizer,
+        model_name: str,
+        conversation: ScopeGuardV2Input,
+        ai_service_description: str | AIServiceDescriptionV2,
+        candidates: list[str],
+    ) -> tuple[str, LLMUsage]:
+        """The reply to a Predefined Answer: one of `candidates`, or generated if empty."""
         prompt = (
             build_prompt(
                 tokenizer,
@@ -587,15 +652,13 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
                 "structured_outputs": {"choice": _grammar_choices(candidates)},
             }
         else:
-            # No list to choose from: generate the reply, as `validate` would.
             body |= {"temperature": self.vllm_temperature, "stop": [_RESPONSE_STOP]}
         response_json = await self._completion(body)
         text = response_json["choices"][0]["text"]
-        result.predefined_response = (
-            _selected(text, candidates) if candidates else _generated(text)
+        return (
+            _selected(text, candidates) if candidates else _generated(text),
+            self._api_usage(response_json, tokenizer),
         )
-        result.usage = _add_usage(usage, self._api_usage(response_json, tokenizer))
-        return result
 
     async def _validate(
         self,
@@ -604,6 +667,7 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         ai_service_description: str | AIServiceDescriptionV2,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         model: str | None = None,
         chat_templating_tokenizer: str | None = None,
         **kwargs,
@@ -613,6 +677,7 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
             ai_service_description=ai_service_description,
             skip_evidences=skip_evidences,
             output_fields=output_fields,
+            resolve_predefined=resolve_predefined,
             model=model,
             chat_templating_tokenizer=chat_templating_tokenizer,
         )
@@ -626,6 +691,7 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
         ai_service_descriptions: list[str] | list[AIServiceDescriptionV2] | None = None,
         skip_evidences: bool | None = None,
         output_fields: Iterable[str] | None = None,
+        resolve_predefined: bool = True,
         model: str | None = None,
         chat_templating_tokenizer: str | None = None,
         **kwargs,
@@ -644,6 +710,7 @@ class AsyncVLLMApiScopeGuardV2(AsyncScopeGuardV2):
                 # prefill stays off on this backend.
                 prefill=False,
                 chat_templating_tokenizer=chat_templating_tokenizer,
+                resolve_predefined=resolve_predefined,
             )
             for c, aisd in zip(conversations, ai_service_descriptions)  # type: ignore[invalid-argument-type]
         ]

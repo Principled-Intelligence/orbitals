@@ -72,6 +72,7 @@ async def validate(
     ai_service_description: Annotated[str | AIServiceDescriptionV2, Body()],
     skip_evidences: Annotated[bool | None, Body()] = None,
     output_fields: Annotated[list[str] | None, Body()] = None,
+    resolve_predefined: Annotated[bool, Body()] = True,
     model: Annotated[str | None, Body()] = None,
     include_default_safety_principles: Annotated[bool | None, Body()] = None,
 ) -> ScopeGuardV2Response:
@@ -83,6 +84,7 @@ async def validate(
         ai_service_description=ai_service_description,
         skip_evidences=skip_evidences,
         output_fields=output_fields,
+        resolve_predefined=resolve_predefined,
         include_default_safety_principles=include_default_safety_principles,
         model=model,
     )
@@ -111,6 +113,7 @@ async def batch_validate(
     ),
     skip_evidences: Annotated[bool | None, Body()] = None,
     output_fields: Annotated[list[str] | None, Body()] = None,
+    resolve_predefined: Annotated[bool, Body()] = True,
     model: Annotated[str | None, Body()] = None,
     include_default_safety_principles: Annotated[bool | None, Body()] = None,
 ) -> list[ScopeGuardV2Response]:
@@ -123,6 +126,7 @@ async def batch_validate(
         ai_service_descriptions=ai_service_descriptions,
         skip_evidences=skip_evidences,
         output_fields=output_fields,
+        resolve_predefined=resolve_predefined,
         include_default_safety_principles=include_default_safety_principles,
         model=model,
     )

@@ -1656,7 +1656,7 @@ def _hf_guard(monkeypatch, *, record, **kwargs):
         tokenizer = _Tokenizer()
 
         def __call__(self, inputs, output_fields=None):
-            return [record]
+            return [record] if isinstance(inputs, tuple) else [[record] for _ in inputs]
 
     monkeypatch.setattr("orbitals.utils.maybe_configure_gpu_usage", lambda: None)
     monkeypatch.setitem(
